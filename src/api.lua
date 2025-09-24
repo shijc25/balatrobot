@@ -41,8 +41,14 @@ end
 function BalatrobotAPI.queueaction(action)
     Botlogger.reset()
     BalatrobotAPI.lastAction = action[1]
+
     local _params = Bot.ACTIONPARAMS[action[1]]
+    if BalatrobotAPI.waitingFor ~= _params.func and _params.func == 'sell_jokers' and BalatrobotAPI.waitingFor == 'select_shop_action' then
+        
+        List.pushleft(Botlogger['q_'..'select_shop_action'], { 0, action })
+    else
         List.pushleft(Botlogger['q_'.._params.func], { 0, action })
+    end
 end
 
 function BalatrobotAPI.update(dt)
@@ -150,8 +156,11 @@ function BalatrobotAPI.init()
 
     -- G.FUNCS.wipe_on = function(message, no_card, timefac, alt_colour) end
     -- G.FUNCS.wipe_off = function() end
-    G.FUNCS.delay = function(time, queue) end
-
+    if BALATRO_BOT_CONFIG.disable_delay then
+        G.FUNCS.delay = function(time, queue)
+            -- Do nothing, effectively disabling the delay
+        end
+    end
     -- Only draw/present every Nth frame
     local original_draw = love.draw
     local draw_count = 0

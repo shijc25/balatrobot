@@ -1,13 +1,74 @@
-from random import choice
+from random import choice, randint, random
+from gym_envs.base_card import BaseCard
+import numpy as np
 
 
-class Card:
+class Card(BaseCard):
     SUITS = ["Hearts", "Diamonds", "Clubs", "Spades"]
     RANKS = list(range(2, 15))
 
     def __init__(self, suit, value):
+        super().__init__()
         self.suit = suit
         self.value = value
+        self.seal = 0
+        self.enhancement = 0
+        self.edition = 0
+        self.cost = 1
+        self.hiker_chips = 0
+        self.glass_breaking = False
+
+    def get_enhancement(self):
+        return self.enhancement
+
+    def get_edition(self):
+        return self.edition
+
+    def get_seal(self):
+        return self.seal
+
+    def copy_from(self, other):
+        self.suit = other.suit
+        self.value = other.value
+        self.seal = other.seal
+        self.enhancement = other.enhancement
+        self.edition = other.edition
+
+    def suit_index(self):
+        return self.SUITS.index(self.suit) if self.suit in self.SUITS else None
+
+    def get_universal_index(self):
+        if self.enhancement == BaseCard.Enhancements.STONE:
+            return BaseCard.STONE_INDEX
+        return 0  # Testing no universal index to see if suit/rank embeddings are better alone
+        # if self.suit is None or self.value is None:
+        #     return 0
+        # return self.index() + self.FIRST_PLAYING_CARD_INDEX
+
+    def get_u_rank_index(self):
+        if self.enhancement == BaseCard.Enhancements.STONE:
+            return 0
+        return self.value - 1 if self.value in self.RANKS else 0
+
+    def get_u_suit_index(self):
+        if self.enhancement == BaseCard.Enhancements.WILD:
+            return 5
+        if self.enhancement == BaseCard.Enhancements.STONE:
+            return 0
+        return self.suit_index() + 1 if self.suit in self.SUITS else 0
+
+    def chip_value(self):
+        if self.enhancement == BaseCard.Enhancements.STONE:
+            return 50
+        if self.value == 14:
+            return 11 + self.hiker_chips
+        return min(self.value, 10) + self.hiker_chips
+
+    def get_scalar_properties(self):
+        p = np.zeros(4, dtype=np.float32)
+        p[0] = (self.cost - 4) / 10
+        p[1] = self.chip_value()
+        return p
 
     def index(self):
         if self.suit is None or self.value is None:
@@ -21,6 +82,32 @@ class Card:
         }
         return suit_map[self.suit] * 13 + self.value - 2
 
+    def is_face_card(self, pareidolia=False, jokers=[]):
+        if not pareidolia and any(j.name == "Pareidolia" for j in jokers):
+            return self.is_face_card(pareidolia=True)
+        return pareidolia or self.value in [11, 12, 13]
+
+    @staticmethod
+    def from_gamestate_card(gamestate_card):
+        value = gamestate_card.get("value", None)
+        suit = gamestate_card.get("suit", None)
+        if suit is None or value is None:
+            return None
+        try:
+            value = int(value)
+        except ValueError:
+            value = {"Jack": 11, "Queen": 12, "King": 13, "Ace": 14}.get(value, value)
+
+        return Card(suit, value)
+
+    @staticmethod
+    def index_to_card(index):
+        if index < 0 or index >= 52:
+            return None
+        suit = Card.SUITS[index // 13]
+        value = index % 13 + 2
+        return Card(suit, value)
+
     def __str__(self):
         return f"{self.value} of {self.suit}"
 
@@ -33,9 +120,33 @@ class Card:
     def __hash__(self):
         return hash((self.suit, self.value))
 
+    def smeared_suit(self):
+        if self.suit in ["Hearts", "Diamonds"]:
+            return "Red"
+        elif self.suit in ["Clubs", "Spades"]:
+            return "Black"
+        return None
+
     @staticmethod
-    def random():
-        return Card(choice(Card.SUITS), choice(Card.RANKS))
+    def random(vanilla_only=False):
+        c = Card(choice(Card.SUITS), choice(Card.RANKS))
+        if vanilla_only:
+            return c
+        edition_r = random()
+        if edition_r < 0.012:
+            c.edition = BaseCard.Editions.POLYCHROME
+        elif edition_r < 0.040:
+            c.edition = BaseCard.Editions.HOLOGRAPHIC
+        elif edition_r < 0.080:
+            c.edition = BaseCard.Editions.FOIL
+
+        if random() < 0.40:
+            c.enhancement = randint(1, BaseCard.num_enhancements - 1)
+
+        if random() < 0.2:
+            c.seal = randint(1, BaseCard.num_seals - 1)
+
+        return c
 
     @staticmethod
     def random_flush(hand):
@@ -74,7 +185,7 @@ class Card:
 
         return Card(flush.suit, straight.value)
 
-    # For pair, three of a kind, and four of a kind
+    # For pair, Three of a Kind, and four of a kind
     @staticmethod
     def random_dupe(hand):
         if len(hand) == 0:

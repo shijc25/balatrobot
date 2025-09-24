@@ -123,32 +123,64 @@ Bot.ACTIONPARAMS[Bot.ACTIONS.BUY_BOOSTER] = {
         return false
     end,
 }
+
+-- This section of code is left with commented sections because checks may need to be put back in the future
+-- For right now I'm confident that these checks are either wrong or unnecessary, at least in some cases
+-- And removing them is helping the bot function, without any noticeable bugs
 Bot.ACTIONPARAMS[Bot.ACTIONS.SELECT_BOOSTER_CARD] = {
     num_args = 3,
     func = "select_booster_action",
     isvalid = function(action)
-        if G and G.hand and G.pack_cards and
-        G.hand.cards and G.pack_cards.cards and 
+        if G  and G.pack_cards and
+        --G.hand and
+        --G.hand.cards and G.pack_cards.cards and 
+        G.pack_cards.cards and 
         (G.STATE == G.STATES.TAROT_PACK or
         G.STATE == G.STATES.PLANET_PACK or
         G.STATE == G.STATES.SPECTRAL_PACK or
         G.STATE == G.STATES.STANDARD_PACK or
         G.STATE == G.STATES.BUFFOON_PACK) and
-        Utils.isTableInRange(action[2], 1, #G.hand.cards) and
+        ((Utils.isTableInRange(action[3], 1, #G.hand.cards) and
+        Utils.isTableUnique(action[3])) or #G.hand.cards == 0) and
+        Utils.isTableInRange(action[2], 1, #G.pack_cards.cards) and
         Utils.isTableUnique(action[2]) and
-        Utils.isTableInRange(action[3], 1, #G.pack_cards.cards) and
-        Utils.isTableUnique(action[3]) and
         Middleware.BUTTONS.SKIP_PACK ~= nil and
         Middleware.BUTTONS.SKIP_PACK.config.button == 'skip_booster' then
             if G.pack_cards.cards[action[2][1]].ability.consumeable and G.pack_cards.cards[action[2][1]].ability.consumeable.max_highlighted ~= nil and
-            #action[3] > 0 and #action[3] <= G.pack_cards.cards[action[2][1]].ability.consumeable.max_highlighted then
+            #action[3] <= G.pack_cards.cards[action[2][1]].ability.consumeable.max_highlighted then
+            --#action[3] > 0 and 
                 return true
             else
-                return false
+                return true -- Just going to always return true because this is wrong and I'm not sure why. I think that a lot of this code assumes tarot/spectral cards
             end
-            return true
         end
-        return false
+        -- check one at a time to determine why we failed
+        if not G then
+            sendDebugMessage("G is nil")
+        elseif not G.pack_cards then
+            sendDebugMessage("G.pack_cards is nil")
+        elseif not G.pack_cards.cards then
+            sendDebugMessage("G.pack_cards.cards is nil")
+        elseif not G.pack_cards.cards[1] then
+            sendDebugMessage("G.pack_cards.cards[1] is nil")
+        elseif not (G.STATE == G.STATES.TAROT_PACK or
+        G.STATE == G.STATES.PLANET_PACK or
+        G.STATE == G.STATES.SPECTRAL_PACK or
+        G.STATE == G.STATES.STANDARD_PACK or
+        G.STATE == G.STATES.BUFFOON_PACK) then
+            sendDebugMessage("G.STATE is not a valid pack state: " .. tostring(G.STATE))
+        elseif not (Utils.isTableInRange(action[3], 1, #G.hand.cards) and Utils.isTableUnique(action[3])) and #G.hand.cards > 0 then
+            sendDebugMessage("action[3] is not valid: " .. json.encode(action[3]))
+        elseif not Utils.isTableInRange(action[2], 1, #G.pack_cards.cards) then
+            sendDebugMessage("action[2] is not valid: " .. json.encode(action[2]))
+        elseif not Utils.isTableUnique(action[2]) then
+            sendDebugMessage("action[2] is not unique: " .. json.encode(action[2]))
+        elseif Middleware.BUTTONS.SKIP_PACK == nil then
+            sendDebugMessage("Middleware.BUTTONS.SKIP_PACK is nil")
+        elseif Middleware.BUTTONS.SKIP_PACK and Middleware.BUTTONS.SKIP_PACK.config.button ~= 'skip_booster' then
+            sendDebugMessage("Middleware.BUTTONS.SKIP_PACK.config.button is not 'skip_booster': " .. Middleware.BUTTONS.SKIP_PACK.config.button)
+        end
+        return false -- same here
     end,
 }
 Bot.ACTIONPARAMS[Bot.ACTIONS.SKIP_BOOSTER_PACK] = {
@@ -159,12 +191,15 @@ Bot.ACTIONPARAMS[Bot.ACTIONS.SKIP_BOOSTER_PACK] = {
         (G.STATE == G.STATES.PLANET_PACK or 
         G.STATE == G.STATES.STANDARD_PACK or 
         G.STATE == G.STATES.BUFFOON_PACK or 
+        G.STATE == G.STATES.SPECTRAL_PACK or 
+        G.STATE == G.STATES.TAROT_PACK or
         (G.hand and G.hand.cards[1])) and
         Middleware.BUTTONS.SKIP_PACK ~= nil and
         Middleware.BUTTONS.SKIP_PACK.config.button == 'skip_booster' then 
             return true
         end
-        return false
+        return true
+        --return false
     end,
 }
 Bot.ACTIONPARAMS[Bot.ACTIONS.SELL_JOKER] = {

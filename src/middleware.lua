@@ -95,15 +95,18 @@ end
 
 local function clickcard(card, delay)
     queueaction(function()
-        --if card and card.click then
+        if card and card.click then
             card:click()
-        --end
+        end
     end, delay)
 end
 
 local function usecard(card, delay)
 
     queueaction(function()
+        if not card then
+            return
+        end
         local _use_button = nil
         local _use_button = card.children.use_button and card.children.use_button.definition
         if _use_button and _use_button.config.button == nil then
@@ -148,7 +151,10 @@ local function c_update()
             local _result = {Middleware.conditionalactions[i].ready()}
             local _ready = table.remove(_result, 1)
             if _ready == true then
-                Middleware.conditionalactions[i].fire(unpack(_result))
+                if Middleware.conditionalactions[i].fire then
+                    Middleware.conditionalactions[i].fire(unpack(_result))
+                end
+                -- Middleware.conditionalactions[i].fire(unpack(_result))
                 Middleware.conditionalactions[i] = nil
             end
         end
@@ -240,13 +246,21 @@ function Middleware.c_choose_booster_cards()
         elseif _action == Bot.ACTIONS.SELECT_BOOSTER_CARD then
     
             -- Click each card from your deck first (only occurs if _pack_card is consumable)
-            for i = 1, #_hand_cards do
-                clickcard(G.hand.cards[_hand_cards[i]])
+            if _hand_cards and #_hand_cards > 0 then
+                for i = 1, #_hand_cards do
+                    clickcard(G.hand.cards[_hand_cards[i]])
+                end
             end
     
             -- Then select the booster card to activate
-            clickcard(G.pack_cards.cards[_card[1]])
-            usecard(G.pack_cards.cards[_card[1]])
+            -- clickcard(G.pack_cards.cards[1])
+            -- usecard(G.pack_cards.cards[1])
+            sendDebugMessage(_action)
+            sendDebugMessage(_card[1])
+            if G.booster_pack then
+                clickcard(G.pack_cards.cards[_card[1]])
+                usecard(G.pack_cards.cards[_card[1]])
+            end
         end
     
         if G.GAME.pack_choices - 1 > 0 then
@@ -254,9 +268,10 @@ function Middleware.c_choose_booster_cards()
                 firewhenready(function()
                     return Middleware.BUTTONS.SKIP_PACK ~= nil and
                     Middleware.BUTTONS.SKIP_PACK.config.button == 'skip_booster' and
-                    Middleware.choosingboostercards == false and
+                    -- Middleware.choosingboostercards == false and
                     G and G.pack_cards and G.pack_cards.cards
                 end, function()
+                    Middleware.choosingboostercards = false
                     Middleware.c_choose_booster_cards()
                 end)
             end, 0.0)
@@ -268,6 +283,14 @@ function Middleware.c_choose_booster_cards()
                     end, function()
                         Middleware.choosingboostercards = false
                         Middleware.c_select_blind()
+                    end)
+                end, 0.0)
+            else
+                queueaction(function()
+                    firewhenready(function()
+                        return G.STATE_COMPLETE and G.STATE == G.STATES.SHOP
+                    end, function()
+                        Middleware.choosingboostercards = false
                     end)
                 end, 0.0)
             end
@@ -304,6 +327,7 @@ function Middleware.c_shop()
     _choices[Bot.ACTIONS.BUY_CARD] = #_cards_to_buy > 0 and _cards_to_buy or nil
     _choices[Bot.ACTIONS.BUY_VOUCHER] = #_vouchers_to_buy > 0 and _vouchers_to_buy or nil
     _choices[Bot.ACTIONS.BUY_BOOSTER] = #_boosters_to_buy > 0 and _boosters_to_buy or nil
+    _choices[Bot.ACTIONS.SELL_JOKER] = G.jokers.cards and #G.jokers.cards > 0 or nil
     
     firewhenready(function()
         local _action, _card = Bot.select_shop_action(_choices)
@@ -330,6 +354,11 @@ function Middleware.c_shop()
             _done_shopping = true
             clickcard(_choices[Bot.ACTIONS.BUY_BOOSTER][_card[1]])
             usecard(_choices[Bot.ACTIONS.BUY_BOOSTER][_card[1]])
+        elseif _action == Bot.ACTIONS.SELL_JOKER then
+            for i = 1, #_card do
+                clickcard(G.jokers.cards[_card[i]])
+                usecard(G.jokers.cards[_card[i]])
+            end
         end
     
         if not _done_shopping then
@@ -585,6 +614,10 @@ local function c_initgamehooks()
     -- Booster pack skip availability
     G.FUNCS.can_skip_booster = Hook.addcallback(G.FUNCS.can_skip_booster, function(...)
         local _e = ...
+        if _e == nil then
+            return
+        end
+        -- sendDebugMessage('Setting skip pack button: ' .. tostring(_e))
         Middleware.BUTTONS.SKIP_PACK = _e
         if Middleware.BUTTONS.SKIP_PACK ~= nil and
         Middleware.BUTTONS.SKIP_PACK.config.button == 'skip_booster' and

@@ -5,3 +5,9 @@ model_snapshots
 saved_models
 tensorboard_logs
 debug.py
+run_data/*
+*.json
+*.pkl
+wandb/*
+*.run
+env_profile.prof

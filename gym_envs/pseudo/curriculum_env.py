@@ -14,14 +14,14 @@ class CurriculumEnv(MultiAgentEnv):
 
         self.hands = [
             "Flush",  # 0
-            "Four of a kind",  # 1
-            "Full house",  # 2
-            "High card",  # 3
+            "Four of a Kind",  # 1
+            "Full House",  # 2
+            "High Card",  # 3
             "Pair",  # 4
             "Straight",  # 5
-            "Straight flush",  # 6
-            "Three of a kind",  # 7
-            "Two pair",  # 8
+            "Straight Flush",  # 6
+            "Three of a Kind",  # 7
+            "Two Pair",  # 8
         ]
 
         self.curriculum_steps = [

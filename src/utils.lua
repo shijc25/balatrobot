@@ -15,12 +15,21 @@ function Utils.getCardData(card)
     if card.rarity then
         _card.rarity = card.rarity
     end
+    if card.ability then
+        _card.ability = card.ability
+    end
 
     return _card
 end
 
 function Utils.getDeckData()
     local _deck = { }
+    if G and G.deck and G.deck.cards then
+        for i = 1, #G.deck.cards do
+            local _card = Utils.getCardData(G.deck.cards[i])
+            _deck[i] = _card
+        end
+    end
 
     return _deck
 end
@@ -95,6 +104,7 @@ function Utils.getShopData()
     _shop.cards = { }
     _shop.boosters = { }
     _shop.vouchers = { }
+    _shop.pack_cards = {}
 
     for i = 1, #G.shop_jokers.cards do
         _shop.cards[i] = Utils.getCardData(G.shop_jokers.cards[i])
@@ -108,11 +118,25 @@ function Utils.getShopData()
         _shop.vouchers[i] = Utils.getCardData(G.shop_vouchers.cards[i])
     end
 
+    if G.pack_cards and G.pack_cards.cards then
+        for i=1, #G.pack_cards.cards do
+            _shop.pack_cards[i] = Utils.getCardData(G.pack_cards.cards[i])
+        end
+    end
+
     return _shop
 end
 
 function Utils.getHandScoreData()
     local _handscores = { }
+    if not G or not G.GAME or not G.GAME.hands then return _handscores end
+
+    for key, value in pairs(G.GAME.hands) do
+        local _handscore = { }
+        _handscore.chips = value.chips
+        _handscore.mult = value.mult
+        _handscores[key] = _handscore
+    end
 
     return _handscores
 end
@@ -242,13 +266,18 @@ function Utils.validateAction(action)
     elseif not Bot.ACTIONPARAMS[action[1]].isvalid(action) then
         return Utils.ERROR.INVALIDACTION
     elseif Bot.ACTIONPARAMS[action[1]].func ~= BalatrobotAPI.waitingFor then
+        if Bot.ACTIONPARAMS[action[1]].func == 'sell_jokers' and BalatrobotAPI.waitingFor == 'select_shop_action' then
+            if not BalatrobotAPI.waitingForAction then
+                return Utils.ERROR.NOTREADY
+            end
+            return Utils.ERROR.NOERROR
+        end
         return Utils.ERROR.WRONGACTION
     end
 
-
-    -- if not BalatrobotAPI.waitingForAction then
-    --     return Utils.ERROR.NOTREADY
-    -- end
+    if not BalatrobotAPI.waitingForAction then
+        return Utils.ERROR.NOTREADY
+    end
 
     return Utils.ERROR.NOERROR
 end

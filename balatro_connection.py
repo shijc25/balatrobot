@@ -59,6 +59,7 @@ class BalatroConnection:
         self.balatro_instance = None
         self.last_action = None
         self.start_time = None
+        self.last_command_time = None
 
     def start_balatro_instance(self):
         self.start_time = time.time()
@@ -85,6 +86,7 @@ class BalatroConnection:
     def send_cmd(self, cmd):
         self.connect()
         msg = bytes(cmd, "utf-8")
+        self.last_command_time = time.time()
         self.sock.sendto(msg, self.addr)
         response = self.receive_data()
         return response
@@ -108,7 +110,8 @@ class BalatroConnection:
             data = self.sock.recv(65536)
             jsondata = json.loads(data)
             if "response" in jsondata:
-                pass
+                if "Error" in jsondata["response"]:
+                    print(f"Error from server: {jsondata['response']}")
             return jsondata
         except socket.error as e:
             print(e)
