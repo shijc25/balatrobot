@@ -1,8 +1,8 @@
 from balatro_connection import BalatroConnection
-from gym_envs.real_balatro.balatro_stepper import BalatroStepper
+from gym_envs.integrations.balatro_stepper import BalatroStepper
 import time
-from gym_envs.pseudo.blind_env import PseudoBlindEnv
-from gym_envs.pseudo.shop_env import PseudoShopEnv
+from gym_envs.envs.blind_env import BlindEnv
+from gym_envs.envs.shop_env import ShopEnv
 from bot import Bot, Actions
 
 blind_steps = ["select_cards_from_hand"]
@@ -10,9 +10,9 @@ shop_steps = ["select_shop_action", "select_booster_action"]
 
 balatro_connection = BalatroConnection(bot_port=12345)
 stepper = BalatroStepper(balatro_connection, agency_states=blind_steps + shop_steps)
-blind_env = PseudoBlindEnv()
+blind_env = BlindEnv()
 blind_env.reset()
-shop_env = PseudoShopEnv()
+shop_env = ShopEnv()
 shop_env.reset()
 
 while True:

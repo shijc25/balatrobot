@@ -157,11 +157,11 @@ class BaseCard:
 
     @staticmethod
     def from_gamestate_card(gamestate_card):
-        from gym_envs.pseudo.card import Card
-        from gym_envs.pseudo.booster import Booster
+        from gym_envs.components.card import Card
+        from gym_envs.components.booster import Booster
         from gym_envs.joker import Joker
-        from gym_envs.pseudo.planet import PlanetCard
-        from gym_envs.pseudo.tarot import TarotCard
+        from gym_envs.components.planet import PlanetCard
+        from gym_envs.components.tarot import TarotCard
 
         for sub_class in [
             Card,

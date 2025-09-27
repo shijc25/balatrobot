@@ -1,5 +1,12 @@
 import json
-from gym_envs.pseudo.play_hand_type_env import PlayHandTypeEnv
+try:
+    from gym_envs.envs.play_hand_type_env import PlayHandTypeEnv
+except ImportError as exc:
+    raise ImportError(
+        "PlayHandTypeEnv is not available in the reorganized environments. "
+        "Please update offline_data_generator to target one of the maintained envs."
+    ) from exc
+
 from random import choice, randint, sample
 from copy import deepcopy
 from ray.rllib.offline.json_writer import JsonWriter

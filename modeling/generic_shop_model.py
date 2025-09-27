@@ -4,7 +4,7 @@ from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.modelv2 import ModelConfigDict
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork as TorchFCNet
 from modeling.submodules.card_self_attention import CardSelfAttention
-from gym_envs.pseudo.card import Card
+from gym_envs.components.card import Card
 import math
 from ray.rllib.models.modelv2 import ModelV2, restore_original_dimensions
 from ray.rllib.models.torch.torch_action_dist import TorchCategorical

@@ -1,7 +1,7 @@
 import unittest
-from gym_envs.pseudo.hand import Hand
-from gym_envs.pseudo.card import Card
-from gym_envs.pseudo.deck import Deck
+from gym_envs.components.hand import Hand
+from gym_envs.components.card import Card
+from gym_envs.components.deck import Deck
 from copy import deepcopy
 
 

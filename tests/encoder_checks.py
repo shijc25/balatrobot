@@ -1,8 +1,8 @@
 from gym_envs.joker import Joker
-from gym_envs.pseudo.card import Card
-from gym_envs.pseudo.tarot import TarotCard
-from gym_envs.pseudo.spectral import SpectralCard
-from gym_envs.pseudo.planet import PlanetCard
+from gym_envs.components.card import Card
+from gym_envs.components.tarot import TarotCard
+from gym_envs.components.spectral import SpectralCard
+from gym_envs.components.planet import PlanetCard
 
 
 if __name__ == "__main__":

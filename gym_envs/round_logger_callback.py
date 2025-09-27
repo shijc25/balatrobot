@@ -28,7 +28,7 @@ from gym_envs.joker_effects import supported_jokers
 from ray.rllib.algorithms.ppo import PPO
 from gym_envs.joker import Joker
 from ray.rllib.env import MultiAgentEnv
-from gym_envs.pseudo.card import Card
+from gym_envs.components.card import Card
 from gym_envs.blind import Blind
 from gym_envs.base_card import BaseCard
 from ray.rllib.evaluation.postprocessing import compute_gae_for_sample_batch
@@ -634,7 +634,7 @@ class RoundLoggerCallback(DefaultCallbacks):
         #     )
         # )
 
-        # blind_ckpt = r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\saved_models\PPO_PseudoBlindEnv_0bfd2_00000_0_2025-06-11_16-47-26\checkpoint_000054"
+        # blind_ckpt = r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\saved_models\PPO_BlindEnv_0bfd2_00000_0_2025-06-11_16-47-26\checkpoint_000054"
         # Load everything (weights, optimizer, timesteps) in one go:
         # if not getattr(algorithm, "_blind_injected", False):
         #     # load the old blind algo just to pull its state

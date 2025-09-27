@@ -1,12 +1,12 @@
-from gym_envs.pseudo.blind_env import PseudoBlindEnv
+from gym_envs.envs.blind_env import BlindEnv
 from itertools import combinations
-from gym_envs.pseudo.hand import Hand
+from gym_envs.components.hand import Hand
 import time
 import cProfile, pstats
 
 
 class RoundOneBot:
-    def choose_action(self, env: PseudoBlindEnv):
+    def choose_action(self, env: BlindEnv):
         best_hand_type, scoring_cards = env.G.hand.evaluate()
         hand_score = (
             env.G.hand_stats[best_hand_type].chips
@@ -110,7 +110,7 @@ start = time.time()
 B = 1000
 hands_in_round_1 = []
 steps = 0
-env = PseudoBlindEnv(blind_env_config)
+env = BlindEnv(blind_env_config)
 profiler = cProfile.Profile()
 profiler.enable()
 for e in range(B):

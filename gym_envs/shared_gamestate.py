@@ -1,9 +1,9 @@
 from gym_envs.base_card import BaseCard
 from gym_envs.blind import Blind
 from gym_envs.joker import Joker
-from gym_envs.pseudo.deck import Deck
-from gym_envs.pseudo.hand import Hand
-from gym_envs.pseudo.hand_type import HandType
+from gym_envs.components.deck import Deck
+from gym_envs.components.hand import Hand
+from gym_envs.components.hand_type import HandType
 
 
 # For managing aspects of the game state that are similar between blind, shop, etc.

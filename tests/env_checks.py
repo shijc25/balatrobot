@@ -1,9 +1,9 @@
-from gym_envs.pseudo.blind_env import PseudoBlindEnv
-from gym_envs.pseudo.shop_env import PseudoShopEnv
-from gym_envs.pseudo.blind_shop_env import BlindShopEnv
+from gym_envs.envs.blind_env import BlindEnv
+from gym_envs.envs.shop_env import ShopEnv
+from gym_envs.envs.blind_shop_env import BlindShopEnv
 import numpy as np
 
-# env = PseudoBlindEnv(
+# env = BlindEnv(
 #     env_config={
 #         "max_hand_size": 8,
 #         "action_mode": "multi_binary",
@@ -69,7 +69,7 @@ import numpy as np
 #     print(obs)
 
 
-# shop_env = PseudoShopEnv({})
+# shop_env = ShopEnv({})
 # shop_env.reset()
 # print(shop_env.get_obs())
 
