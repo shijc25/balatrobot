@@ -15,8 +15,8 @@ from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.nested_dict import NestedDict
 from ray.rllib.core import Columns
 
-# from modeling.combo_index_dist import ComboIndexDist
-from modeling.new_api.combo_index_dist import ComboIndexDist
+# from modeling.combo_index_dist import ComboIndexDistribution
+from modeling.distributions.experimental import ComboIndexDistribution
 from ray.rllib.utils.annotations import override
 
 
@@ -212,15 +212,15 @@ class HydraModule(TorchRLModule):
 
     @override(TorchRLModule)
     def get_train_action_dist_cls(self):
-        return ComboIndexDist
+        return ComboIndexDistribution
 
     @override(TorchRLModule)
     def get_exploration_action_dist_cls(self):
-        return ComboIndexDist
+        return ComboIndexDistribution
 
     @override(TorchRLModule)
     def get_inference_action_dist_cls(self):
-        return ComboIndexDist
+        return ComboIndexDistribution
 
     def _forward_inference(self, batch: NestedDict) -> Mapping[str, Any]:
         return self._forward_train(batch)
@@ -376,7 +376,7 @@ class HydraModule(TorchRLModule):
 
         return {
             "action_dist_inputs": logits,
-            # "action_dist": ComboIndexDist(logits),
+            # "action_dist": ComboIndexDistribution(logits),
             "vf_preds": value_preds,
             "hand_prediction": hand_preds,
         }

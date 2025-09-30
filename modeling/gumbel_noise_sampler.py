@@ -21,7 +21,7 @@ from itertools import combinations
 from ray.rllib.utils.torch_utils import FLOAT_MIN
 import itertools
 from ray.util.metrics import Counter
-from modeling.mode_count_multi_binary import ModeCountBinaryDist
+from modeling.distributions import ModeCountBinaryDistribution
 from random import random
 
 

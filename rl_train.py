@@ -23,18 +23,20 @@ from ray.tune.search.bayesopt import BayesOptSearch
 
 from modeling.generic_blind_model import BalatroBlindModel as GenericBalatroBlindModel
 from modeling.generic_shop_model import BalatroShopModel as GenericBalatroShopModel
-from modeling.play_discard_multi_binary import PlayDiscardBinaryDist
-from modeling.ar_choose_or_stop import ARChooseOrStop
-from modeling.ar_choose_or_stop_stacked import ARChooseOrStopStacked
-from modeling.ar_multi_binary import ARBinaryDist
-from modeling.linear_experts_dist import LinearExpertsDist
-from modeling.expert_options_dist import ExpertOptionsDist
-from modeling.mode_count_multi_binary import ModeCountBinaryDist
-from modeling.shop_action_and_hand_targets import ShopActionAndHandTargetsDist
-from modeling.expert_mode_counts import ExpertModeCountsDist
+from modeling.distributions import (
+    ARBinaryDistribution,
+    ARChooseOrStopDistribution,
+    ARChooseOrStopStackedDistribution,
+    DualSubsetDistribution,
+    ExpertModeCountsDistribution,
+    ExpertOptionsDistribution,
+    LinearExpertsDistribution,
+    ModeCountBinaryDistribution,
+    PlayDiscardBinaryDistribution,
+    ShopActionAndHandTargetsDistribution,
+    SparseSubsetAndMaskDistribution,
+)
 from modeling.gumbel_noise_sampler import GumbelNoiseSamplerDist
-from modeling.dual_subset_dist import DualSubsetDist
-from modeling.sparse_subset_and_mask_dist import SparseSubsetAndMaskDist
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env, register_trainable
 from ray.rllib.policy.torch_policy_v2 import TorchPolicyV2
@@ -373,35 +375,41 @@ if __name__ == "__main__":
     ray.init(ignore_reinit_error=True)
 
     ModelCatalog.register_custom_action_dist(
-        "play_discard_binary_dist", PlayDiscardBinaryDist
+        "play_discard_binary_dist", PlayDiscardBinaryDistribution
     )
     ModelCatalog.register_custom_action_dist(
-        "auto_regressive_binary_dist", ARBinaryDist
-    )
-    ModelCatalog.register_custom_action_dist("ar_choose_or_stop_dist", ARChooseOrStop)
-    ModelCatalog.register_custom_action_dist(
-        "ar_choose_or_stop_stacked_dist", ARChooseOrStopStacked
-    )
-    ModelCatalog.register_custom_action_dist("linear_experts_dist", LinearExpertsDist)
-    ModelCatalog.register_custom_action_dist("expert_options_dist", ExpertOptionsDist)
-    ModelCatalog.register_custom_action_dist(
-        "mode_count_binary_dist", ModeCountBinaryDist
+        "auto_regressive_binary_dist", ARBinaryDistribution
     )
     ModelCatalog.register_custom_action_dist(
-        "shop_action_and_hand_targets_dist", ShopActionAndHandTargetsDist
+        "ar_choose_or_stop_dist", ARChooseOrStopDistribution
+    )
+    ModelCatalog.register_custom_action_dist(
+        "ar_choose_or_stop_stacked_dist", ARChooseOrStopStackedDistribution
+    )
+    ModelCatalog.register_custom_action_dist(
+        "linear_experts_dist", LinearExpertsDistribution
+    )
+    ModelCatalog.register_custom_action_dist(
+        "expert_options_dist", ExpertOptionsDistribution
+    )
+    ModelCatalog.register_custom_action_dist(
+        "mode_count_binary_dist", ModeCountBinaryDistribution
+    )
+    ModelCatalog.register_custom_action_dist(
+        "shop_action_and_hand_targets_dist", ShopActionAndHandTargetsDistribution
     )
     ModelCatalog.register_custom_action_dist(
         "gumbel_noise_sampler", GumbelNoiseSamplerDist
     )
     ModelCatalog.register_custom_action_dist(
-        "expert_mode_counts_dist", ExpertModeCountsDist
+        "expert_mode_counts_dist", ExpertModeCountsDistribution
     )
 
     ModelCatalog.register_custom_model("generic_blind_model", GenericBalatroBlindModel)
     ModelCatalog.register_custom_model("generic_shop_model", GenericBalatroShopModel)
-    ModelCatalog.register_custom_action_dist("dual_subset", DualSubsetDist)
+    ModelCatalog.register_custom_action_dist("dual_subset", DualSubsetDistribution)
     ModelCatalog.register_custom_action_dist(
-        "sparse_subset_and_mask_dist", SparseSubsetAndMaskDist
+        "sparse_subset_and_mask_dist", SparseSubsetAndMaskDistribution
     )
 
     max_jokers = 5
