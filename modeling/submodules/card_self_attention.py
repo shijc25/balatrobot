@@ -1,6 +1,6 @@
 import torch.nn as nn
-import torchrl
-import torchrl.modules
+
+from modeling.optional_torchrl import noisy_linear_cls
 
 
 class CardSelfAttention(nn.Module):
@@ -12,7 +12,7 @@ class CardSelfAttention(nn.Module):
         self, d_model: int, n_heads: int = 4, dropout: float = 0.0, noisy: bool = False
     ):
         super().__init__()
-        self.lin_cls = torchrl.modules.NoisyLinear if noisy else nn.Linear
+        self.lin_cls = noisy_linear_cls(noisy)
         self.attn = nn.MultiheadAttention(
             embed_dim=d_model, num_heads=n_heads, batch_first=True, dropout=dropout
         )

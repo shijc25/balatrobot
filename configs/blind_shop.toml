@@ -1,0 +1,74 @@
+# Default configuration for blind/shop joint training.
+
+[general]
+training_mode = "blind_shop"
+
+[ray]
+ignore_reinit_error = true
+
+[run]
+name = "blind_shop"
+storage_path = "run_data"
+trial_name_format = "{run_name}_{trial_id}"
+# num_samples = 1
+
+# Default stop condition is intentionally empty -- override as needed.
+[run.stop]
+
+
+[checkpoint]
+num_to_keep = 10
+checkpoint_frequency = 10
+
+[wandb]
+enabled = true
+project = "balatro-rl"
+log_config = true
+save_checkpoints = false
+# entity = ""
+# group = ""
+
+[parameters]
+max_jokers = 5
+max_hand_size = 10
+target_hand_reward = 0.0
+num_experts = 3
+subset_hand_types = ""
+subset_scoring_cards = ""
+demo_mode = false
+shared_encoder = false
+blind_action_dist = "ar_choose_or_stop_stacked_dist"
+
+[blind_env]
+objective_mode = "blind_grind"
+cannot_discard_obs = true
+subset_hand_types_obs = false
+scoring_cards_mask_obs = false
+
+[blind_model.custom_model_config]
+action_method = "autoregressive"
+
+[shop_model.custom_model_config]
+attention_layers = 1
+attention_heads = 4
+
+[blind_shop_env]
+start_phase = "blind"
+shop_starts_enabled = true
+cycle_blind_agents = true
+truncate_blind_agents = false
+catchup_probability = 0.0
+
+[blind_shop_env.shop_env_config]
+ignore_rarity = true
+
+[ppo_overrides.blind_shop.env_runners]
+num_env_runners = 10
+num_envs_per_env_runner = 6
+
+[ppo_overrides.blind_shop.training]
+train_batch_size = 32768  # 2**15
+sgd_minibatch_size = 2048  # 2**11
+num_sgd_iter = 3
+lr = 0.0001
+

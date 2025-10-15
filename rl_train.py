@@ -1,7 +1,9 @@
+import argparse
 import cProfile
 import io
 import os
 import pstats
+from pathlib import Path
 
 os.environ["RAY_DEDUP_LOGS"] = "0"
 import ray
@@ -21,7 +23,9 @@ from ray.air import RunConfig
 from copy import deepcopy
 from ray.tune.search.bayesopt import BayesOptSearch
 
-from modeling.generic_blind_model import BalatroBlindModel as GenericBalatroBlindModel
+from modeling.generic_blind_model import (
+    BalatroBlindModel as GenericBalatroBlindModel,
+)
 from modeling.generic_shop_model import BalatroShopModel as GenericBalatroShopModel
 from modeling.distributions import (
     ARBinaryDistribution,
@@ -57,13 +61,42 @@ from ray.rllib.core.rl_module.marl_module import MultiAgentRLModuleSpec
 import os
 from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 import wandb
-from typing import Dict as typed_dict
+from typing import Any, Dict as typed_dict
 from gym_envs.components.deck import Deck, ErraticDeck
 from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 
 from ray.air.config import CheckpointConfig
+from config_utils import load_config_file, apply_overrides, deep_merge
 
 os.environ["WANDB_SILENT"] = "true"
+
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_CONFIG_PATH = BASE_DIR / "configs" / "blind_shop.toml"
+DEFAULT_STORAGE_PATH = BASE_DIR / "run_data"
+DEFAULT_RAY_CONFIG: dict[str, Any] = {"ignore_reinit_error": True}
+
+PARAMETER_DEFAULTS: dict[str, Any] = {
+    "max_jokers": 5,
+    "max_hand_size": 10,
+    "target_hand_reward": 0.0,
+    "num_experts": 3,
+    "subset_hand_types": None,
+    "subset_scoring_cards": None,
+    "demo_mode": False,
+    "shared_encoder": False,
+    "blind_action_dist": "ar_choose_or_stop_stacked_dist",
+}
+
+ACTION_MODE_LOOKUP = {
+    "mode_count_binary_dist": "mode_count_binary",
+    "play_discard_binary_dist": "multi_binary",
+    "expert_mode_counts_dist": "expert_mode_counts",
+    "dual_subset": "dual_subset",
+    "sparse_subset_and_mask_dist": "play_subset_discard_mask",
+    "ar_choose_or_stop_stacked_dist": "stacked_binary_masks",
+}
+
+_OPTIONAL_SENTINELS = {"", "none", "null"}
 
 
 class CuriosityTorchPolicy(PPOTorchPolicy):
@@ -141,10 +174,208 @@ def log_results(i, result):
     )
 
 
+def _normalize_optional(value: Any) -> Any:
+    if isinstance(value, str) and value.lower() in _OPTIONAL_SENTINELS:
+        return None
+    return value
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train Balatro RL agents with PPO.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to a TOML configuration file.",
+    )
+    parser.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Override configuration values using dot notation keys.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve configuration and exit without launching training.",
+    )
+    return parser.parse_args()
+
+
+def apply_ppo_overrides(
+    config: PPOConfig, overrides: dict[str, Any] | None
+) -> PPOConfig:
+    if not overrides:
+        return config
+    config_copy = config.copy(copy_frozen=False)
+    overrides = dict(overrides)
+
+    def _apply_builder(name: str):
+        if name not in overrides:
+            return
+        args = overrides.pop(name)
+        builder = getattr(config_copy, name)
+        if args is None:
+            builder()
+        elif isinstance(args, dict):
+            builder(**args)
+        else:
+            builder(args)
+
+    for builder_name in (
+        "resources",
+        "env_runners",
+        "training",
+        "multi_agent",
+        "evaluation",
+    ):
+        _apply_builder(builder_name)
+
+    if overrides:
+        config_copy.update_from_dict(overrides)
+    return config_copy
+
+
+def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
+    subset_hand_types = params.get("subset_hand_types")
+    subset_scoring_cards = params.get("subset_scoring_cards")
+    target_hand_reward = params.get("target_hand_reward", 0.0)
+    max_hand_size = params["max_hand_size"]
+    max_jokers = params["max_jokers"]
+    config = {
+        "objective_mode": "blind_grind",
+        "max_hand_size": max_hand_size,
+        "action_mode": ACTION_MODE_LOOKUP[params["blind_action_dist"]],
+        "hand_mode": "base_card",
+        "num_experts": params["num_experts"],
+        "imagined_trajectories": False,
+        "expert_pretraining": False,
+        "deck_cls": Deck,
+        "deck_obs": False,
+        "deck_counts_obs": False,
+        "embed_cards": True,
+        "discard_penalty": 0.0,
+        "correct_reward": 1.0,
+        "incorrect_penalty": 0.0,
+        "discard_potential_reward": 0.0,
+        "goal_progress_reward": 0.5,
+        "suit_homogeneity_bonus": 0.1,
+        "joker_synergy_bonus": 0.0,
+        "flattened_rank_chips": False,
+        "cannot_discard_obs": True,
+        "contained_hand_types_obs": True,
+        "subset_hand_types_obs": subset_hand_types is not None,
+        "scoring_cards_mask_obs": subset_scoring_cards is not None,
+        "force_play": True,
+        "chips_reward_weight": 1.0 / 1000,
+        "hand_type_reward_weight": target_hand_reward,
+        "infinite_deck": False,
+        "bias": 0.0,
+        "rarity_bonus": 0.0,
+        "target_hand_obs": target_hand_reward > 0.0,
+        "max_jokers": max_jokers,
+        "chip_reward_normalization": "log_joker",
+        "joker_count_range": (0, 0),
+        "hand_level_range": (1, 1),
+        "hand_level_randomization": None,
+        "joker_count_bias_exponent": 2,
+        "round_range": (1, 1),
+    }
+    return config
+
+
+def default_blind_model_config(params: dict[str, Any]) -> dict[str, Any]:
+    subset_hand_types = params.get("subset_hand_types")
+    subset_scoring_cards = params.get("subset_scoring_cards")
+    config = {
+        "custom_model": "generic_blind_model",
+        "custom_action_dist": params["blind_action_dist"],
+        "custom_model_config": {
+            "embed_cards": True,
+            "card_embedding_size": 64,
+            "embed_suits_ranks": "learned",
+            "hidden_size": 256,
+            "hidden_layer_count": 2,
+            "self_attention_layers": 2,
+            "self_attention_heads": 4,
+            "action_method": "autoregressive",
+            "discard_as_intent": True,
+            "hand_representation_method": "context_token",
+            "jokers_in_hand_attention": False,
+            "num_experts": params["num_experts"],
+            "max_jokers": params["max_jokers"],
+            "max_supported_hand_size": params["max_hand_size"],
+            "joker_types": 151,
+            "forced_play_head": False,
+            "subset_hand_types": subset_hand_types,
+            "scoring_cards_masks": subset_scoring_cards,
+            "FiLM_mode": None,
+            "deck_obs": False,
+            "shared_encoder": params["shared_encoder"],
+            "noisy_layers": [],
+            "allow_illegal_actions": False,
+            "valid_card_count_coeff": 0.0,
+            "suit_rank_entropy_coeff": 0.0,
+            "suit_matching_aux_coeff": 0.0,
+            "rank_matching_aux_coeff": 0.0,
+            "option_variation_coeff": 0.0,
+            "available_hand_types_coeff": 0.0,
+            "intent_similarity_coeff": 0.0,
+            "joker_identity_coeff": 0.0,
+            "suit_count_aux_coeff": 0.0,
+            "weight_decay_coeff": 0.0,
+            "hand_score_aux_coeff": 0.0,
+            "joker_spread_loss_coeff": 0.0,
+        },
+    }
+    return config
+
+
+def default_shop_model_config(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "custom_model": "generic_shop_model",
+        "custom_action_dist": "shop_action_and_hand_targets_dist",
+        "custom_model_config": {
+            "max_hand_size": params["max_hand_size"],
+            "card_embedding_size": 64,
+            "attention_layers": 1,
+            "attention_heads": 4,
+            "action_head_depth": 2,
+            "action_method": "convolutional",
+            "shared_encoder": params["shared_encoder"],
+        },
+    }
+
+
+def default_blind_shop_env_config(
+    params: dict[str, Any], blind_env_config: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "start_phase": "blind",
+        "stake": 0,
+        "shop_starts_enabled": True,
+        "cash_gained_reward": 0.001,
+        "run_win_reward": 0.2,
+        "round_won_reward": 1.0,
+        "blind_env_config": blind_env_config,
+        "shop_env_config": {
+            "ignore_rarity": True,
+            "max_hand_size": params["max_hand_size"],
+        },
+        "connect_to_balatro": params["demo_mode"],
+        "cycle_blind_agents": True,
+        "truncate_blind_agents": False,
+        "catchup_probability": 0.0,
+    }
+
+
 # dummy test environment for testing purposes
 # Doesn't actually have any way of validating that the agent is doing the right thing
-def shop_config(model_config={}):
+def shop_config(model_config=None, ppo_overrides=None):
     env_config = {}
+    model_config = model_config or {}
     config = (
         PPOConfig()
         .environment(
@@ -187,13 +418,16 @@ def shop_config(model_config={}):
         # )
     )
 
-    return config
+    return apply_ppo_overrides(config, ppo_overrides)
 
 
 def blind_config(
-    blind_env_config={},
-    blind_model_config={},
+    blind_env_config=None,
+    blind_model_config=None,
+    ppo_overrides=None,
 ):
+    blind_env_config = blind_env_config or {}
+    blind_model_config = blind_model_config or {}
     hand_size = 8
     config = (
         PPOConfig()
@@ -245,26 +479,29 @@ def blind_config(
         # )
     )
 
-    return config
+    return apply_ppo_overrides(config, ppo_overrides)
 
 
 def blind_shop_config(
-    blind_env_config={},
-    blind_model_config={},
-    blind_shop_env_config={},
-    shop_model_config={},
+    blind_env_config=None,
+    blind_model_config=None,
+    blind_shop_env_config=None,
+    shop_model_config=None,
+    ppo_overrides=None,
 ):
     smoke = False
+    blind_env_config = blind_env_config or {}
+    blind_model_config = blind_model_config or {}
+    blind_shop_env_config = blind_shop_env_config or {}
+    shop_model_config = shop_model_config or {}
     blind_env = BlindEnv(blind_env_config)
     shop_env = ShopEnv(blind_shop_env_config["shop_env_config"])
 
     remote_env = blind_shop_env_config.get("connect_to_balatro", False)
     eval_env_config = deepcopy(blind_shop_env_config)
-    eval_env_config["shop_starts_enabled"] = True  # Enable shop starts for evaluation
-    eval_env_config["catchup_probability"] = 0.0  # Disable catchup for evaluation
-    eval_env_config["shop_env_config"][
-        "ignore_rarity"
-    ] = False  # Don't ignore rarity in evaluation
+    eval_env_config["shop_starts_enabled"] = True
+    eval_env_config["catchup_probability"] = 0.0
+    eval_env_config["shop_env_config"]["ignore_rarity"] = False
 
     POLICIES = {
         "blind_agent": (
@@ -273,18 +510,9 @@ def blind_shop_config(
             blind_env.action_space,
             {
                 "model": blind_model_config,
-                # "kl_target": 0.02,
                 "kl_coeff": 0.0,
                 "explore": not remote_env,
                 "lambda_": 0.99,
-                # "entropy_coeff": 0.001,
-                # "entropy_coeff_schedule": [
-                #     [0, 0.02],
-                #     [3e5, 0.01],
-                #     [2e6, 0.01],
-                #     [6e6, 0.001],
-                #     [1e7, 0.0001],
-                # ],
             },
         ),
         "shop_agent": (
@@ -293,11 +521,9 @@ def blind_shop_config(
             shop_env.action_space,
             {
                 "model": shop_model_config,
-                # "entropy_coeff": 0.01,
                 "kl_coeff": 0.0,
                 "entropy_coeff": 0.01,
                 "entropy_coeff_schedule": [[0, 0.01], [2e5, 0.003], [1e6, 0.0]],
-                # "lr": 5e-4,
                 "explore": not remote_env,
                 "lambda_": 0.95,
             },
@@ -311,42 +537,28 @@ def blind_shop_config(
 
     config = (
         PPOConfig(CuriosityPPO)
-        .environment(
-            env=BlindShopEnv,
-            env_config=blind_shop_env_config,
-        )
+        .environment(env=BlindShopEnv, env_config=blind_shop_env_config)
         .callbacks(RoundLoggerCallback)
         .framework("torch")
         .experimental(_enable_new_api_stack=False)
-        .resources(num_gpus=1, num_cpus_per_worker=1)  # , num_cpus_for_local_worker=10)
+        .resources(num_gpus=1, num_cpus_per_worker=1)
         .env_runners(
             num_env_runners=(10 if not remote_env and not smoke else 0),
-            # num_env_runners=0,
             num_envs_per_env_runner=6 if not remote_env and not smoke else 1,
-            # num_envs_per_env_runner=10,
             explore=not remote_env,
             sample_timeout_s=60,
             rollout_fragment_length="auto",
-            # rollout_fragment_length=128,
-            # This would be good to use, but it breaks certain data passed to the model
-            # e.g. card indices that need to be passed into the embedding layer
-            # observation_filter="MeanStdFilter",
             batch_mode="complete_episodes",
         )
         .multi_agent(
             policies=POLICIES,
             policy_mapping_fn=policy_mapper,
-            policies_to_train=(
-                ["shop_agent", "blind_agent"]
-                if not remote_env
-                else []  # remote env is for demo only, not training
-            ),
+            policies_to_train=(["shop_agent", "blind_agent"] if not remote_env else []),
         )
         .training(
             train_batch_size=int(2**15),
             sgd_minibatch_size=int(2**11),
             num_sgd_iter=3,
-            # lr_schedule=[[0, 1e-3], [1e6, 1e-4]],
             lr=1e-4,
             grad_clip=3,
             clip_param=0.3,
@@ -366,271 +578,210 @@ def blind_shop_config(
             evaluation_duration="auto",
         )
 
-    return config
+    return apply_ppo_overrides(config, ppo_overrides)
+
+
+def run_training(
+    config_path: Path | str | None = None,
+    overrides: list[str] | None = None,
+    dry_run: bool = False,
+):
+    config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    if not config_path.is_absolute():
+        config_path = (Path.cwd() / config_path).resolve()
+    overrides = list(overrides or [])
+
+    config_from_file = load_config_file(config_path)
+    config_data = apply_overrides(config_from_file, overrides)
+
+    general_cfg = config_data.get("general", {})
+    training_mode = general_cfg.get("training_mode", "blind_shop")
+
+    ray_cfg = deep_merge(DEFAULT_RAY_CONFIG, config_data.get("ray", {}))
+    ray_cfg.setdefault("ignore_reinit_error", True)
+    ray.init(**ray_cfg)
+
+    analysis = None
+    try:
+        ModelCatalog.register_custom_action_dist(
+            "play_discard_binary_dist", PlayDiscardBinaryDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "auto_regressive_binary_dist", ARBinaryDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "ar_choose_or_stop_dist", ARChooseOrStopDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "ar_choose_or_stop_stacked_dist", ARChooseOrStopStackedDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "linear_experts_dist", LinearExpertsDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "expert_options_dist", ExpertOptionsDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "mode_count_binary_dist", ModeCountBinaryDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "shop_action_and_hand_targets_dist", ShopActionAndHandTargetsDistribution
+        )
+        ModelCatalog.register_custom_action_dist(
+            "gumbel_noise_sampler", GumbelNoiseSamplerDist
+        )
+        ModelCatalog.register_custom_action_dist(
+            "expert_mode_counts_dist", ExpertModeCountsDistribution
+        )
+
+        ModelCatalog.register_custom_model(
+            "generic_blind_model", GenericBalatroBlindModel
+        )
+        ModelCatalog.register_custom_model(
+            "generic_shop_model", GenericBalatroShopModel
+        )
+        ModelCatalog.register_custom_action_dist("dual_subset", DualSubsetDistribution)
+        ModelCatalog.register_custom_action_dist(
+            "sparse_subset_and_mask_dist", SparseSubsetAndMaskDistribution
+        )
+
+        parameters_raw = deep_merge(
+            PARAMETER_DEFAULTS, config_data.get("parameters", {})
+        )
+        parameters = {k: _normalize_optional(v) for k, v in parameters_raw.items()}
+
+        blind_action_dist = parameters["blind_action_dist"]
+        if blind_action_dist not in ACTION_MODE_LOOKUP:
+            raise ValueError(
+                f"Unknown blind_action_dist '{blind_action_dist}'. Known values: {list(ACTION_MODE_LOOKUP)}"
+            )
+
+        blind_env_config = deep_merge(
+            default_blind_env_config(parameters), config_data.get("blind_env", {})
+        )
+        blind_model_config = deep_merge(
+            default_blind_model_config(parameters), config_data.get("blind_model", {})
+        )
+        shop_model_config = deep_merge(
+            default_shop_model_config(parameters), config_data.get("shop_model", {})
+        )
+        blind_shop_env_config = deep_merge(
+            default_blind_shop_env_config(parameters, blind_env_config),
+            config_data.get("blind_shop_env", {}),
+        )
+        blind_shop_env_config["blind_env_config"] = blind_env_config
+        blind_shop_env_config["shop_env_config"] = deep_merge(
+            {"ignore_rarity": True, "max_hand_size": parameters["max_hand_size"]},
+            blind_shop_env_config.get("shop_env_config", {}),
+        )
+
+        ppo_overrides = config_data.get("ppo_overrides", {})
+
+        if training_mode == "blind":
+            algo_config = blind_config(
+                blind_env_config=blind_env_config,
+                blind_model_config=blind_model_config,
+                ppo_overrides=ppo_overrides.get("blind"),
+            )
+        elif training_mode == "shop_only":
+            algo_config = shop_config(
+                model_config=shop_model_config,
+                ppo_overrides=ppo_overrides.get("shop"),
+            )
+        elif training_mode == "blind_shop":
+            algo_config = blind_shop_config(
+                blind_env_config=blind_env_config,
+                blind_model_config=blind_model_config,
+                blind_shop_env_config=blind_shop_env_config,
+                shop_model_config=shop_model_config,
+                ppo_overrides=ppo_overrides.get("blind_shop"),
+            )
+        else:
+            raise ValueError(
+                f"Unknown training mode '{training_mode}'. Expected 'blind', 'shop_only', or 'blind_shop'."
+            )
+
+        wandb_cfg = config_data.get("wandb", {})
+        callbacks = []
+        if wandb_cfg.get("enabled", True):
+            wandb_kwargs = {
+                "project": wandb_cfg.get("project", "balatro-rl"),
+                "log_config": wandb_cfg.get("log_config", True),
+                "save_checkpoints": wandb_cfg.get("save_checkpoints", False),
+            }
+            for optional_key in ("entity", "group", "api_key_file", "job_type"):
+                if optional_key in wandb_cfg:
+                    wandb_kwargs[optional_key] = wandb_cfg[optional_key]
+            callbacks.append(WandbLoggerCallback(**wandb_kwargs))
+
+        run_settings = config_data.get("run", {})
+        run_name = run_settings.get("name", training_mode)
+        storage_path_value = run_settings.get("storage_path", DEFAULT_STORAGE_PATH)
+        storage_path = Path(storage_path_value)
+        if not storage_path.is_absolute():
+            storage_path = (BASE_DIR / storage_path).resolve()
+
+        trial_format = run_settings.get("trial_name_format", "{run_name}_{trial_id}")
+
+        def trial_name_creator(trial):
+            template_vars = {
+                "run_name": run_name,
+                "trial_id": trial.trial_id,
+                "experiment_tag": getattr(trial, "experiment_tag", ""),
+            }
+            try:
+                return trial_format.format(**template_vars)
+            except KeyError:
+                return f"{run_name}_{trial.trial_id}"
+
+        checkpoint_cfg = config_data.get("checkpoint", {})
+        checkpoint_kwargs = {
+            "num_to_keep": checkpoint_cfg.get("num_to_keep", 10),
+            "checkpoint_frequency": checkpoint_cfg.get("checkpoint_frequency", 10),
+        }
+        if "checkpoint_at_end" in checkpoint_cfg:
+            checkpoint_kwargs["checkpoint_at_end"] = checkpoint_cfg["checkpoint_at_end"]
+        checkpoint_config = CheckpointConfig(**checkpoint_kwargs)
+
+        if dry_run:
+            print("Resolved training mode:", training_mode)
+            print("Config file:", config_path)
+            print("Ray init kwargs:", ray_cfg)
+            print("Storage path:", storage_path)
+            print("Callbacks:", [cb.__class__.__name__ for cb in callbacks])
+            print("PPO override keys:", list(ppo_overrides.keys()))
+            return None
+
+        tune_kwargs: dict[str, Any] = {
+            "config": algo_config,
+            "name": run_name,
+            "callbacks": callbacks,
+            "storage_path": str(storage_path),
+            "checkpoint_config": checkpoint_config,
+            "trial_name_creator": trial_name_creator,
+        }
+
+        if run_settings.get("stop"):
+            tune_kwargs["stop"] = run_settings["stop"]
+        if "num_samples" in run_settings:
+            tune_kwargs["num_samples"] = run_settings["num_samples"]
+        if run_settings.get("restore"):
+            tune_kwargs["restore"] = run_settings["restore"]
+        if run_settings.get("metric"):
+            tune_kwargs["metric"] = run_settings["metric"]
+        if run_settings.get("mode"):
+            tune_kwargs["mode"] = run_settings["mode"]
+
+        analysis = tune.run(CuriosityPPO, **tune_kwargs)
+        return analysis
+    finally:
+        ray.shutdown()
+
+
+def main():
+    args = parse_args()
+    run_training(args.config, args.overrides, args.dry_run)
 
 
 if __name__ == "__main__":
-    # model_name = "ppo_play_hand_type"
-    # torch.autograd.set_detect_anomaly(True)
-    ray.init(ignore_reinit_error=True)
-
-    ModelCatalog.register_custom_action_dist(
-        "play_discard_binary_dist", PlayDiscardBinaryDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "auto_regressive_binary_dist", ARBinaryDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "ar_choose_or_stop_dist", ARChooseOrStopDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "ar_choose_or_stop_stacked_dist", ARChooseOrStopStackedDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "linear_experts_dist", LinearExpertsDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "expert_options_dist", ExpertOptionsDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "mode_count_binary_dist", ModeCountBinaryDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "shop_action_and_hand_targets_dist", ShopActionAndHandTargetsDistribution
-    )
-    ModelCatalog.register_custom_action_dist(
-        "gumbel_noise_sampler", GumbelNoiseSamplerDist
-    )
-    ModelCatalog.register_custom_action_dist(
-        "expert_mode_counts_dist", ExpertModeCountsDistribution
-    )
-
-    ModelCatalog.register_custom_model("generic_blind_model", GenericBalatroBlindModel)
-    ModelCatalog.register_custom_model("generic_shop_model", GenericBalatroShopModel)
-    ModelCatalog.register_custom_action_dist("dual_subset", DualSubsetDistribution)
-    ModelCatalog.register_custom_action_dist(
-        "sparse_subset_and_mask_dist", SparseSubsetAndMaskDistribution
-    )
-
-    max_jokers = 5
-    max_hand_size = 10
-    target_hand_reward = 0
-    num_experts = 3  # Number of experts for the intent vectors model
-    subset_hand_types = None  # "obs", "aux", None
-    subset_scoring_cards = None
-    demo_mode = False
-    shared_encoder = False
-
-    blind_action_dist = "ar_choose_or_stop_stacked_dist"
-    action_mode_lookup = {
-        "mode_count_binary_dist": "mode_count_binary",
-        "play_discard_binary_dist": "multi_binary",
-        "expert_mode_counts_dist": "expert_mode_counts",
-        "dual_subset": "dual_subset",
-        "sparse_subset_and_mask_dist": "play_subset_discard_mask",
-        "ar_choose_or_stop_stacked_dist": "stacked_binary_masks",
-    }
-
-    blind_env_config = {
-        "objective_mode": "blind_grind",  # "one_hand_easy", "blind_grind"
-        "max_hand_size": max_hand_size,
-        "action_mode": action_mode_lookup[blind_action_dist],
-        # "action_mode": "subset_index",
-        "hand_mode": "base_card",
-        "num_experts": num_experts,
-        "correct_reward": 1.0,
-        "incorrect_penalty": 0.0,
-        "discard_potential_reward": 0.00,
-        "goal_progress_reward": 0.5,
-        "suit_homogeneity_bonus": 0.1,
-        "joker_synergy_bonus": 0.00,
-        "discard_penalty": 0.0,  # negative penalty = reward for discarding
-        "flattened_rank_chips": False,
-        "cannot_discard_obs": True,
-        "contained_hand_types_obs": True,
-        "subset_hand_types_obs": subset_hand_types is not None,
-        "scoring_cards_mask_obs": subset_scoring_cards is not None,
-        "force_play": True,
-        "chips_reward_weight": 1.0 / 1000,
-        "hand_type_reward_weight": target_hand_reward,
-        "infinite_deck": False,
-        "bias": 0.0,
-        "rarity_bonus": 0.0,
-        "target_hand_obs": target_hand_reward > 0.0,
-        "max_jokers": max_jokers,
-        "chip_reward_normalization": "log_joker",
-        "expert_pretraining": False,
-        "deck_obs": False,
-        "deck_counts_obs": False,
-        "imagined_trajectories": False,
-        "deck_cls": Deck,  # Deck class to use for the environment
-        "joker_count_range": (0, 0),
-        "hand_level_range": (1, 1),
-        "hand_level_randomization": None,
-        "joker_count_bias_exponent": 2,
-        "round_range": (
-            1,
-            1,
-        ),  # Defines starting round. Usually (1, 1), but can be changed for curriculum or testing
-    }
-
-    blind_model_config = {
-        "custom_model": "generic_blind_model",
-        "custom_action_dist": blind_action_dist,
-        # "custom_action_dist": "gumbel_noise_sampler",
-        "custom_model_config": {
-            "embed_cards": True,
-            "card_embedding_size": 64,
-            "embed_suits_ranks": "learned",  # None, "learned", "manual", "manual_learned"
-            "hidden_size": 256,
-            "hidden_layer_count": 2,
-            "self_attention_layers": 2,
-            "self_attention_heads": 4,
-            "action_method": "autoregressive",  # "intent_vectors" "linear_logits" "autoregressive" "convolutional" "linear_experts" "subset_convolution"
-            "discard_as_intent": True,
-            "hand_representation_method": "context_token",
-            "jokers_in_hand_attention": False,
-            # "ar_head_hidden_size": 256, # deprecated, right now we use the card_embedding_size for the AR context token
-            "num_experts": num_experts,
-            "max_jokers": max_jokers,
-            "max_supported_hand_size": max_hand_size,
-            "joker_types": 151,
-            "forced_play_head": False,  # Separate head for discarding on 0 discards by playing
-            "subset_hand_types": subset_hand_types,
-            "scoring_cards_masks": subset_scoring_cards,
-            "FiLM_mode": None,
-            "deck_obs": False,
-            "shared_encoder": shared_encoder,
-            "noisy_layers": [],  # "attention"
-            "allow_illegal_actions": False,
-            "valid_card_count_coeff": 0.000,
-            "suit_rank_entropy_coeff": 0.000,
-            "suit_matching_aux_coeff": 0.0,
-            "rank_matching_aux_coeff": 0.0,
-            "option_variation_coeff": 0.000,
-            "available_hand_types_coeff": 0.00,
-            "intent_similarity_coeff": 0.0,
-            "joker_identity_coeff": 0.00,
-            "suit_count_aux_coeff": 0.00,
-            "weight_decay_coeff": 0.0000,
-            "hand_score_aux_coeff": 0.0,
-            "joker_spread_loss_coeff": 0.00,
-        },
-    }
-
-    shop_model_config = {
-        "custom_model": "generic_shop_model",
-        "custom_action_dist": "shop_action_and_hand_targets_dist",
-        "custom_model_config": {
-            "max_hand_size": max_hand_size,
-            "card_embedding_size": 64,
-            "attention_layers": 1,
-            "attention_heads": 4,
-            "action_head_depth": 2,
-            "action_method": "convolutional",  # "convolutional", "intent_vectors"
-            "shared_encoder": shared_encoder,
-        },
-    }
-
-    blind_shop_env_config = {
-        "start_phase": "blind",
-        "stake": 0,
-        "shop_starts_enabled": True,
-        "cash_gained_reward": 0.001,
-        "run_win_reward": 0.2,
-        "round_won_reward": 1.0,
-        "blind_env_config": blind_env_config,
-        "shop_env_config": {"ignore_rarity": True, "max_hand_size": max_hand_size},
-        "connect_to_balatro": demo_mode,
-        "cycle_blind_agents": True,
-        "truncate_blind_agents": False,
-        "catchup_probability": 0.0,  # Probability of starting the episode mid run at a random round, with random initial conditions
-    }
-
-    training_mode = "blind_shop"
-    if training_mode == "blind":
-        config = blind_config(
-            blind_env_config=blind_env_config,
-            blind_model_config=blind_model_config,
-        )
-    elif training_mode == "shop_only":
-        config = shop_config({"custom_model": "generic_shop_model"})
-    elif training_mode == "blind_shop":
-        max_jokers = 5
-        config = blind_shop_config(
-            blind_env_config=blind_env_config,
-            blind_model_config=blind_model_config,
-            blind_shop_env_config=blind_shop_env_config,
-            shop_model_config=shop_model_config,
-        )
-
-    def set_curr_func(round_range, jokers=(0, 0)):
-        def set_ranges(env):
-            env.round_range = round_range
-            env.joker_count_range = jokers
-
-        return set_ranges
-
-    zero_joker_baseline = r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data\blind_shop\blind_shop_01510_00000_0_2025-07-04_18-07-14\checkpoint_000060"
-    one_joker_baseline = r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data\blind_shop\blind_shop_62d60_00000_0_2025-07-08_07-28-08\checkpoint_000010"
-    shop_baseline = r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data\blind_shop\blind_shop_82cab_00000_0_2025-08-11_20-53-23\checkpoint_000004"
-    green_stake_baseline = r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data\blind_shop\blind_shop_eef66_00000_0_2025-07-22_15-43-41\checkpoint_000006"
-
-    # tuner = tune.Tuner(
-    #     CuriosityPPO,
-    #     param_space=config,
-    #     run_config=RunConfig(
-    #         name=training_mode,
-    #         stop={"training_iteration": 1000},
-    #         callbacks=[],
-    #         storage_path=r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data",
-    #         # trial_name_creator=lambda trial: f"{training_mode}_{trial.trial_id}",
-    #         checkpoint_config=CheckpointConfig(num_to_keep=10, checkpoint_frequency=10),
-    #     ),
-    # )
-    # tuner.fit()
-
-    # algo = config.build()  # <-- config stays an AlgorithmConfig
-    # for i in range(1000):
-    #     result = algo.train()  # <-- all private flags are intact
-    #     print(f"Iter {i}: reward_mean={result['episode_reward_mean']}")
-
-    tune.run(
-        CuriosityPPO,
-        config=config,
-        name=training_mode,
-        # stop={"training_iteration": 1},
-        callbacks=[
-            WandbLoggerCallback(
-                project="balatro-rl", log_config=True, save_checkpoints=False
-            ),
-        ],
-        # local_dir=r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data",
-        storage_path=r"C:\Users\giewe\AppData\Roaming\Balatro\Mods\balatrobot\run_data",
-        trial_name_creator=lambda trial: f"{training_mode}_{trial.trial_id}",
-        # restore=shop_baseline,
-        checkpoint_config=CheckpointConfig(num_to_keep=10, checkpoint_frequency=10),
-        # reuse_actors=True,
-    )
-
-    # results = tune.run(
-    #     "PPO",
-    #     config=config,
-    #     stop={"time_total_s": 600},
-    #     # resources_per_trial={"gpu": 0.25},
-    #     # resources_per_trial={"cpu": 2},
-    #     # checkpoint_at_end=True,
-    #     # checkpoint_freq=50,
-    #     num_samples=-1,
-    #     # search_alg=BayesOptSearch(metric="episode_reward_mean", mode="max"),
-    #     search_alg=OptunaSearch(
-    #         metric="custom_metrics/0_jokers_round_mean", mode="max"
-    #     ),
-    #     # local_dir=f"model_snapshots/{model_name}",
-    #     callbacks=[
-    #         WandbLoggerCallback(
-    #             project="balatro-rl", log_config=True, save_checkpoints=True
-    #         ),
-    #     ],
-    #     trial_dirname_creator=lambda trial: f"{trial.trial_id}",
-    # )
+    main()

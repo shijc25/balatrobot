@@ -11,3 +11,4 @@ run_data/*
 wandb/*
 *.run
 env_profile.prof
+tmp_debug_output.txt
