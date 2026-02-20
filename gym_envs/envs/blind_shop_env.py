@@ -1,4 +1,3 @@
-import gym
 from ray.rllib.env import MultiAgentEnv
 from gym_envs.envs.blind_env import BlindEnv
 from gym_envs.envs.shop_env import ShopEnv
