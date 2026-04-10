@@ -302,10 +302,10 @@ Bot.ACTIONPARAMS[Bot.ACTIONS.START_RUN] = {
 -- CHANGE ME
 Bot.SETTINGS = {
     stake = 1,
-    deck = "Plasma Deck",
+    deck = "Blue Deck",
 
     -- Keep these nil for random seed
-    seed = "1OGB5WO",
+    seed = nil,
     challenge = '',
 
     -- Time between actions the bot takes (pushing buttons, clicking cards, etc.)

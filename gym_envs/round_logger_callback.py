@@ -77,7 +77,9 @@ class RoundLoggerCallback(DefaultCallbacks):
     ):
         # row = {}
         blind_env = base_env.get_sub_environments()[env_index].blind_env
-        shop_env = base_env.get_sub_environments()[env_index].shop_env
+        shop_env = None
+        if hasattr(base_env.get_sub_environments()[env_index], 'shop_env'):
+            shop_env = base_env.get_sub_environments()[env_index].shop_env
         # blind_env = base_env.get_sub_environments()[env_index]
         # shop_env = None
         episode.custom_metrics["round"] = blind_env.round

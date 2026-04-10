@@ -26,7 +26,7 @@ class ShopEnv(gym.Env):
     def __init__(self, env_config={}):
         super().__init__()
 
-        self.illegal_action_reward = env_config.get("illegal_action_reward", -0.2)
+        self.illegal_action_reward = env_config.get("illegal_action_reward", -1)
         self.starting_dollars = env_config.get("starting_dollars", 5.0)
 
         self.G = SharedGamestate()
@@ -366,7 +366,7 @@ class ShopEnv(gym.Env):
             if r <= 20:
                 joker = Joker.random(
                     unlocked_jokers=self.G.unlocked_jokers,
-                    sparse_pool=True,
+                    sparse_pool=False,
                     ignore_rarity=self.ignore_rarity,
                     stake=self.stake,
                 )
@@ -462,29 +462,26 @@ class ShopEnv(gym.Env):
                 )
                 action = [Actions.END_SHOP]
             else:
-                reward = 0.03  # Small positive reward for valid purchase action
+                reward = 0.03
         elif action[0] == Actions.END_SHOP:
-            reward = 0
+            reward = 0.0
         elif action[0] == Actions.REROLL_SHOP:
             if not self.can_pay(self.reroll_cost):
                 reward = self.illegal_action_reward
                 print("Illegal action: Not enough dollars to reroll shop")
                 action = [Actions.END_SHOP]
-            elif not self.can_pay(self.reroll_cost + 5):
-                reward = -0.05
             else:
                 reward = 0.01
+            #   reward = 0.0
         elif action[0] == Actions.SELL_JOKER:
             if len(self.G.owned_jokers) < action[1][0]:
                 reward = self.illegal_action_reward
                 print("Illegal action: Not enough jokers to sell")
                 action = [Actions.END_SHOP]
-            elif len(self.G.owned_jokers) < self.G.joker_limit:
-                reward = -0.05
             else:
-                reward = -0.01
+                reward = 0.0
         else:
-            reward = 0
+            reward = 0.0
 
         self.take_action(action)
         obs = self.get_obs()

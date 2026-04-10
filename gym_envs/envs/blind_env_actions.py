@@ -187,6 +187,9 @@ class BlindActionHelper:
                 print("Warning: Some elements in flattened are greater than 1:", flattened)
 
             play_or_discard = flattened[0]
+            if play_or_discard == 0 and self.discards_left <= 0:
+                play_or_discard = 1
+            
             cards = flattened[1:-1]
             if len(cards) != self.G.max_hand_size:
                 raise ValueError(

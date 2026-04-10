@@ -41,7 +41,7 @@ class BlindGameplayHelper:
     def determine_play_hand_outcome(self, played_hand):
         game_over = self.hands_left == 0
         no_op_result = {
-            "reward": -0.05,
+            "reward": -1,
             "game_over": game_over,
             "hand_type": "High Card",
             "scored_cards": played_hand,
@@ -101,7 +101,7 @@ class BlindGameplayHelper:
         if any([j.name == "Space Joker" for j in self.G.owned_jokers]) and random() < 0.25:
             self.G.hand_stats[hand_type].add_level(1)
 
-        reward = 0
+        reward = 0.0
         chips, mult = self.G.hand_stats[hand_type].scores()
         if self.G.current_blind.name == "The Flint":
             chips = max(int(chips / 2), 1)
@@ -178,7 +178,6 @@ class BlindGameplayHelper:
             chips += effects["chips"]
             mult += effects["mult"]
             mult *= effects["mult_mult"]
-            reward += effects["synergy"] * self.joker_synergy_bonus
 
         for card in self.G.hand.cards:
             if card.enhancement == BaseCard.Enhancements.STEEL:
@@ -201,12 +200,12 @@ class BlindGameplayHelper:
         chips += effects["chips"]
         mult += effects["mult"]
         mult *= effects["mult_mult"]
-        reward += effects["synergy"] * self.joker_synergy_bonus
         aggregate_joker_effects["chips"] += effects["chips"]
         aggregate_joker_effects["mult"] += effects["mult"]
         aggregate_joker_effects["mult_mult"] *= effects["mult_mult"]
 
         post_joker_score = chips * mult
+        
         joker_marginal = post_joker_score - pre_joker_score
 
         if self.objective_mode == "max_chips":
@@ -225,9 +224,10 @@ class BlindGameplayHelper:
             else:
                 reward += post_joker_score * crw
         elif self.objective_mode == "blind_grind":
-            remaining_progress = (self.chip_goal - self.chips) / self.chip_goal
-            progress = post_joker_score / self.chip_goal
-            overkill = max(0, progress - remaining_progress)
+        #    safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
+        #    safe_score = np.clip(safe_score, 0.0, 1e18)
+        #    reward = np.log10(safe_score + 1) * 0.01
+            reward = 0.0
         elif self.objective_mode == "one_hand_easy":
             if hand_type != self.easy_hand_type and self.easy_hand_type == "Flush":
                 reward = 0.5 * max(played_hand.suit_counts().values()) / 10
@@ -239,20 +239,7 @@ class BlindGameplayHelper:
                 reward = 0.5
             else:
                 reward = 0.1
-
-        reward += (
-            self.target_hand_types[self.hand_to_id[hand_type]]
-            * self.hand_type_reward_weight
-        )
-
-        avg_rarity = sum(self.rarities.values()) / len(self.rarities)
-        rarity = self.rarities[hand_type]
-        if rarity > avg_rarity:
-            reward += (rarity - avg_rarity) * self.rarity_bonus
-
-        if len(played_hand) == 5:
-            reward += played_hand.suit_homogeneity() * self.suit_homogeneity_bonus
-
+        
         suit_counts = [0, 0, 0, 0]
         for card in played_hand.cards:
             suit_counts[card.suit_index()] += 1

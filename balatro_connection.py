@@ -64,11 +64,8 @@ class BalatroConnection:
     def start_balatro_instance(self):
         self.start_time = time.time()
         balatro_exec_path = (
-            r"C:\Program Files (x86)\Steam\steamapps\common\Balatro\Balatro.exe"
+            r"D:\SteamLibrary\steamapps\common\Balatro\Balatro.exe"
         )
-        # balatro_exec_path = (
-        #     r"/mnt/c/Program Files (x86)/Steam/steamapps/common/Balatro/Balatro.exe"
-        # )
         self.balatro_instance = subprocess.Popen(
             [balatro_exec_path, str(self.bot_port)]
         )

@@ -7,7 +7,7 @@ training_mode = "blind_shop"
 ignore_reinit_error = true
 
 [run]
-name = "blind_shop"
+name = "shop"
 storage_path = "run_data"
 trial_name_format = "{run_name}_{trial_id}"
 # num_samples = 1
@@ -32,7 +32,7 @@ save_checkpoints = false
 max_jokers = 5
 max_hand_size = 10
 target_hand_reward = 0.0
-num_experts = 3
+num_experts = 0
 subset_hand_types = ""
 subset_scoring_cards = ""
 demo_mode = false
@@ -44,6 +44,9 @@ objective_mode = "blind_grind"
 cannot_discard_obs = true
 subset_hand_types_obs = false
 scoring_cards_mask_obs = false
+joker_count_range = [0, 0]
+hand_level_range = [1, 1]
+round_range = [1, 1]
 
 [blind_model.custom_model_config]
 action_method = "autoregressive"
@@ -63,12 +66,12 @@ catchup_probability = 0.0
 ignore_rarity = true
 
 [ppo_overrides.blind_shop.env_runners]
-num_env_runners = 10
-num_envs_per_env_runner = 6
+num_env_runners = 6
+num_envs_per_env_runner = 10
+sample_timeout_s = 180
 
 [ppo_overrides.blind_shop.training]
-train_batch_size = 32768  # 2**15
-sgd_minibatch_size = 2048  # 2**11
-num_sgd_iter = 3
+train_batch_size = 16384
+sgd_minibatch_size = 2048
+num_sgd_iter = 10
 lr = 0.0001
-

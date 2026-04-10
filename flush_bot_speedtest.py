@@ -2,22 +2,13 @@ from bot import Bot, Actions
 from gamestates import cache_state
 import time
 
-# Plays flushes if possible
-# otherwise keeps the most common suit
-# Discarding the rest, or playing the rest if there are no discards left
 class FlushBot(Bot):
     def skip_or_select_blind(self, G):
-        cache_state("skip_or_select_blind", G)
+        global tot
+        tot += 1
         return [Actions.SELECT_BLIND]
 
     def select_cards_from_hand(self, G):
-        global t
-        global first_time
-        t += 1
-
-        if first_time is None:
-            first_time = time.time()
-
         suit_count = {
             "Hearts": 0,
             "Diamonds": 0,
@@ -40,7 +31,6 @@ class FlushBot(Bot):
                 [G["hand"].index(card) + 1 for card in flush_cards[:5]],
             ]
 
-        # We don't have a flush, so we discard up to 5 cards that are not of the most common suit
         discards = []
         for card in G["hand"]:
             if card["suit"] != most_common_suit:
@@ -53,16 +43,10 @@ class FlushBot(Bot):
             else:
                 action = Actions.PLAY_HAND
             return [action, [G["hand"].index(card) + 1 for card in discards]]
-
-        print(
-            "Somehow don't have a flush, but also don't have any cards to discard. Playing the first card"
-        )
+        
         return [Actions.PLAY_HAND, [1]]
 
     def select_shop_action(self, G):
-        global t
-        t += 1
-
         return [Actions.END_SHOP]
 
     def select_booster_action(self, G):
@@ -86,20 +70,11 @@ class FlushBot(Bot):
     def rearrange_hand(self, G):
         return [Actions.REARRANGE_HAND, []]
 
-
-def benchmark_multi_instance():
-    global t
-    t = 0
-    global first_time
-    first_time = None
-
-    # Benchmark the game states per second for different bot counts
-    bot_counts = range(1, 21, 3)
+def run():
+    bot_counts = [1]
     for bot_count in bot_counts:
-        target_t = 50 * bot_count
-        t = 0
         first_time = None
-
+        target = bot_count * 100
         bots = []
         for i in range(bot_count):
             mybot = FlushBot(
@@ -109,50 +84,28 @@ def benchmark_multi_instance():
                 challenge=None,
                 bot_port=12348 + i,
             )
-
             bots.append(mybot)
 
         try:
             for bot in bots:
                 bot.start_balatro_instance()
-            time.sleep(20)
-
             start_time = time.time()
-            while t < target_t:
+            global tot
+            tot = 0
+            while tot < target:
                 for bot in bots:
                     bot.run_step()
             end_time = time.time()
 
-            t_per_sec = target_t / (end_time - start_time)
-            print(f"Bot count: {bot_count}, t/sec: {t_per_sec}")
+            blind_per_sec = target / (end_time - start_time)
+            print(f"Bot count: {bot_count}, blind/sec: {blind_per_sec}")
         finally:
             # Stop the bots
             for bot in bots:
                 bot.stop_balatro_instance()
 
 
-def run_single_instance():
-    mybot = FlushBot(
-        deck="Blue Deck",
-        stake=1,
-        seed=None,
-        challenge=None,
-        bot_port=12348,
-    )
-
-    try:
-        mybot.start_balatro_instance()
-        time.sleep(10)
-        mybot.run()
-    finally:
-        mybot.stop_balatro_instance()
-
-
 if __name__ == "__main__":
-    global t
-    t = 0
     global first_time
     first_time = None
-
-    benchmark_multi_instance()
-    # run_single_instance()
+    run()

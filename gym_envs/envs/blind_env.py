@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from random import choices, randint
+from random import choices, randint, sample, random
 from typing import Dict, Optional
 
 import gymnasium as gym
@@ -33,9 +33,9 @@ class BlindEnv(gym.Env):
         self.infinite_deck = env_config.get("infinite_deck", False)
         initial_bias = env_config.get("bias", 0.0)
 
-        self.correct_reward = env_config.get("correct_reward", 1.0)
-        self.incorrect_penalty = env_config.get("incorrect_penalty", 1.0)
-        self.discard_penalty = env_config.get("discard_penalty", 0.05)
+        self.correct_reward = env_config.get("correct_reward", 0.0)
+        self.incorrect_penalty = env_config.get("incorrect_penalty", 0.0)
+        self.discard_penalty = env_config.get("discard_penalty", 0.0)
         self.rarity_bonus = env_config.get("rarity_bonus", 0.0)
         self.action_mode = env_config.get("action_mode", "combo_index")
         self.hand_mode = env_config.get("hand_mode", "indices")
@@ -78,9 +78,9 @@ class BlindEnv(gym.Env):
         self.reward_range = (-float("inf"), float("inf"))
 
         self.objective_mode = env_config.get("objective_mode", "max_chips")
-        self.max_discards = 3 if self.objective_mode != "one_hand_easy" else 0
-        self.max_plays = 5 if self.objective_mode != "one_hand_easy" else 10
-        self.chips_reward_weight = env_config.get("chips_reward_weight", 1.0)
+        self.max_discards = 3
+        self.max_plays = 5
+        self.chips_reward_weight = env_config.get("chips_reward_weight", 0.0)
         self.hand_type_reward_weight = env_config.get("hand_type_reward_weight", 0.0)
         self.target_hand_obs = env_config.get("target_hand_obs", False)
         self.cannot_discard_obs = env_config.get("cannot_discard_obs", False)
@@ -225,49 +225,28 @@ class BlindEnv(gym.Env):
         if len(illegal_reasons) > 0:
             print("YOU CAN'T DO THAT")
             print(illegal_reasons)
-            return (self.get_obs(reset_hand=True), -0.1, True, False, {})
-
-        before_hand = deepcopy(self.G.hand)
-        could_have = self.G.hand.contained_hand_types()
-        before_chips = self.chips
+            return (self.get_obs(reset_hand=True), -1, True, False, {})
+        
         played_hand = self.G.hand.pop_cards(action[1])
         if len(played_hand) == 0:
             print("YOU CAN'T PLAY AN EMPTY HAND")
-            return (self.get_obs(), -0.1, True, False, {})
+            return (self.get_obs(), -1, True, False, {})
 
         if action[0] == Actions.DISCARD_HAND:
             self.discards_played += 1
             self.discards_left -= 1
             self.discard_count_counts[len(played_hand)] += 1
 
-            reward = -self.discard_penalty
+            reward = 0.0
+
             effects = joker_discard_effects(self.G.owned_jokers, played_hand)
             self.handle_callbacks(effects["callbacks"])
-            reward += effects["synergy"] * self.joker_synergy_bonus
-
-            if self.round == 1:
-                for hand_type in could_have:
-                    continue
-                    if hand_type in [
-                        "Flush",
-                        "Straight",
-                        "Straight Flush",
-                        "Four of a Kind",
-                        "Full House",
-                    ]:
-                        chips, mult = self.G.hand_stats[hand_type].scores()
-                        chips += 20
-                        could_have_score = chips * mult
-                        if could_have_score + before_chips > self.chip_goal:
-                            reward -= self.goal_progress_reward * 0.3
-                            self.missed_wins.append(before_hand)
 
             self.draw_cards()
-            reward += self.calc_suit_homogeneity_bonus()
             self.reset_hand_watermarks()
             if len(self.G.hand) == 0:
-                return (self.get_obs(reset_hand=True), -0.1, True, False, {})
-
+                return (self.get_obs(reset_hand=True), -1, True, False, {})
+            
             return (
                 self.get_obs(reset_hand=True),
                 reward,
@@ -281,8 +260,9 @@ class BlindEnv(gym.Env):
             if self.round == 1:
                 self.hands_played_in_round_1 += 1
             self.hands_left -= 1
-
+                
             play_result = self.determine_play_hand_outcome(played_hand)
+            
             self.update_scored_card_stats(
                 play_result["scored_cards"], played_hand, play_result["hand_type"]
             )
@@ -293,11 +273,10 @@ class BlindEnv(gym.Env):
 
             if not play_result.get("won_round", False) and not self.hands_left == 0:
                 self.draw_cards()
-                if self.forcing_play:
-                    play_result["reward"] = -self.discard_penalty
 
             self.reset_hand_watermarks()
             self.chips += play_result["hand_score"]
+            
             if self.objective_mode in ["blind_grind"]:
                 cheat_death = (
                     self.chips < self.chip_goal
@@ -313,7 +292,7 @@ class BlindEnv(gym.Env):
                         ]
 
                     play_result["reward"] += (
-                        self.hands_left * 0.1 * self.goal_progress_reward
+                        1.0 + self.hands_left * 0.2
                     )
                     effects = joker_round_win_effects(self.G)
                     self.handle_callbacks(effects["callbacks"])
@@ -322,11 +301,7 @@ class BlindEnv(gym.Env):
                             self.G.dollars += 3
                     self.round += 1
                     play_result["won_round"] = True
-                elif play_result["game_over"] and not self.expert_pretraining:
-                    play_result["reward"] -= (
-                        self.goal_progress_reward * self.failure_progress_penalty
-                    )
-
+                    
             if len(self.G.hand) == 0:
                 play_result["game_over"] = True
 
@@ -338,17 +313,16 @@ class BlindEnv(gym.Env):
                 "won_round": play_result.get("won_round", False),
             }
 
-            if not self.forcing_play:
-                joker_count = len(self.G.owned_jokers)
-                score = play_result.get("joker_marginal", 0)
-                chips = play_result.get("joker_chips", 0)
-                mult = play_result.get("joker_mult", 0)
-                mult_mult = play_result.get("joker_mult_mult", 1.0)
+            joker_count = len(self.G.owned_jokers)
+            score = play_result.get("joker_marginal", 0)
+            chips = play_result.get("joker_chips", 0)
+            mult = play_result.get("joker_mult", 0)
+            mult_mult = play_result.get("joker_mult_mult", 1.0)
 
-                info["joker_marginal"] = score if joker_count > 0 else 0
-                info["joker_chips"] = chips if joker_count > 0 else 0
-                info["joker_mult"] = mult if joker_count > 0 else 0
-                info["joker_mult_mult"] = mult_mult if joker_count > 0 else 1
+            info["joker_marginal"] = score if joker_count > 0 else 0
+            info["joker_chips"] = chips if joker_count > 0 else 0
+            info["joker_mult"] = mult if joker_count > 0 else 0
+            info["joker_mult_mult"] = mult_mult if joker_count > 0 else 1
 
             return (obs, play_result["reward"], play_result["game_over"], False, info)
 
@@ -484,15 +458,31 @@ class BlindEnv(gym.Env):
                     k=1,
                 )[0]
                 self.G.owned_jokers = [
-                    Joker.random(sparse_pool=False) for _ in range(joker_count)
+                    Joker.random(sparse_pool=False) for _ in 
+                    range(joker_count)
                 ]
+            #    for joker in self.G.owned_jokers:
+            #        current_ante = (self.round - 1) // 3 + 1
+            #            
+            #        if "chips" in joker.state and joker.state["chips"] == 0:
+            #            joker.state["chips"] = randint(0, current_ante * 10)
+            #                
+            #        if "mult" in joker.state and joker.state["mult"] == 0:
+            #            joker.state["mult"] = randint(0, current_ante * 3)
+            #                
+            #        if "mult_mult" in joker.state and joker.state["mult_mult"] == 1:
+            #            joker.state["mult_mult"] = 1.0 + (random() * current_ante * 0.2)
 
             hands_to_randomize = []
             if self.hand_level_randomization == "per_hand":
                 hands_to_randomize = self.hands
             elif self.hand_level_randomization == "single_hand":
                 hands_to_randomize = [choices(self.hands)[0]]
-            for hand_type in hands_to_randomize:
+            for h in self.hands:
+                self.G.hand_stats[h].set_level(1, force=True)
+            num_upgraded_hands = randint(1, 3)
+            upgraded_hands = sample(self.hands, num_upgraded_hands)
+            for hand_type in upgraded_hands:
                 chosen_hand_level = choices(
                     range(self.hand_level_range[0], self.hand_level_range[1] + 1),
                     weights=[

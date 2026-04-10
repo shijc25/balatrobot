@@ -21,13 +21,13 @@ class BlindShopEnv(MultiAgentEnv):
         self.blind_env.stake = self.stake
         self.shop_env.stake = self.stake
 
-        self.cash_gained_reward = env_config.get("cash_gained_reward", 0.1)
-        self.round_won_reward = env_config.get("round_won_reward", 1.0)
+        self.cash_gained_reward = env_config.get("cash_gained_reward", 0.0)
+        self.round_won_reward = env_config.get("round_won_reward", 0.0)
         self.start_phase = env_config.get("start_phase", "shop")
         self.reward_norm = env_config.get("reward_norm", False)
         self.catchup_probability = env_config.get("catchup_probability", 0.0)
         self.catchup_round_range = env_config.get("catchup_round_range", (5, 20))
-        self.run_win_reward = env_config.get("run_win_reward", 20.0)
+        self.run_win_reward = env_config.get("run_win_reward", 0.0)
         self.shop_enabled = env_config.get(
             "shop_starts_enabled", True
         )  # shop starts disabled until the blind agent warms up
@@ -223,7 +223,7 @@ class BlindShopEnv(MultiAgentEnv):
                 old_blind_result = (
                     self.blind_agent_id(),
                     blind_obs,
-                    blind_reward + (self.run_win_reward if won_run else 0),
+                    blind_reward,
                     blind_done or won_run,
                     blind_trunc,
                     blind_info,
@@ -310,9 +310,9 @@ class BlindShopEnv(MultiAgentEnv):
 
         self.shop_env.round += 1
         self.shop_env.new_shop()
-        reward = (
-            cash_gained + mid_blind_income
-        ) * self.cash_gained_reward + self.round_won_reward
+        
+        reward = 0.0
+        
         return self.shop_env.get_obs(), reward, self.held_shop_info
 
     def ended_shop(self):

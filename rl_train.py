@@ -3,6 +3,7 @@ import cProfile
 import io
 import os
 import pstats
+import pickle
 from pathlib import Path
 
 os.environ["RAY_DEDUP_LOGS"] = "0"
@@ -257,11 +258,11 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "deck_counts_obs": False,
         "embed_cards": True,
         "discard_penalty": 0.0,
-        "correct_reward": 1.0,
+        "correct_reward": 0.0,
         "incorrect_penalty": 0.0,
         "discard_potential_reward": 0.0,
-        "goal_progress_reward": 0.5,
-        "suit_homogeneity_bonus": 0.1,
+        "goal_progress_reward": 0.0,
+        "suit_homogeneity_bonus": 0.0,
         "joker_synergy_bonus": 0.0,
         "flattened_rank_chips": False,
         "cannot_discard_obs": True,
@@ -269,7 +270,7 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "subset_hand_types_obs": subset_hand_types is not None,
         "scoring_cards_mask_obs": subset_scoring_cards is not None,
         "force_play": True,
-        "chips_reward_weight": 1.0 / 1000,
+        "chips_reward_weight": 0.0,
         "hand_type_reward_weight": target_hand_reward,
         "infinite_deck": False,
         "bias": 0.0,
@@ -279,8 +280,8 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "chip_reward_normalization": "log_joker",
         "joker_count_range": (0, 0),
         "hand_level_range": (1, 1),
-        "hand_level_randomization": None,
-        "joker_count_bias_exponent": 2,
+        "hand_level_randomization": "per_hand",
+        "joker_count_bias_exponent": -1.0,
         "round_range": (1, 1),
     }
     return config
@@ -356,9 +357,9 @@ def default_blind_shop_env_config(
         "start_phase": "blind",
         "stake": 0,
         "shop_starts_enabled": True,
-        "cash_gained_reward": 0.001,
-        "run_win_reward": 0.2,
-        "round_won_reward": 1.0,
+        "cash_gained_reward": 0.0,
+        "run_win_reward": 0.0,
+        "round_won_reward": 0.0,
         "blind_env_config": blind_env_config,
         "shop_env_config": {
             "ignore_rarity": True,
@@ -385,7 +386,7 @@ def shop_config(model_config=None, ppo_overrides=None):
             action_space=ShopEnv(env_config).build_action_space(),
         )
         # .callbacks(RoundLoggerCallback)
-        .framework("torch")
+        .framework("torch", torch_compile_learner=True)
         .resources(num_gpus=1, num_cpus_per_worker=1)
         .env_runners(
             num_env_runners=1,
@@ -511,7 +512,7 @@ def blind_shop_config(
             {
                 "model": blind_model_config,
                 "kl_coeff": 0.0,
-                "explore": not remote_env,
+                "explore": False,
                 "lambda_": 0.99,
             },
         ),
@@ -553,7 +554,7 @@ def blind_shop_config(
         .multi_agent(
             policies=POLICIES,
             policy_mapping_fn=policy_mapper,
-            policies_to_train=(["shop_agent", "blind_agent"] if not remote_env else []),
+            policies_to_train=(["shop_agent"] if not remote_env else []),
         )
         .training(
             train_batch_size=int(2**15),
@@ -568,6 +569,13 @@ def blind_shop_config(
             vf_loss_coeff=0.25,
         )
     )
+    
+    class WeightInitCallback(RoundLoggerCallback):
+        def on_algorithm_init(self, *, algorithm, **kwargs):
+            manual_weight_init(algorithm)
+            super().on_algorithm_init(algorithm=algorithm, **kwargs)
+
+    config.callbacks(WeightInitCallback)
 
     if not remote_env and not smoke:
         config = config.evaluation(
@@ -580,6 +588,13 @@ def blind_shop_config(
 
     return apply_ppo_overrides(config, ppo_overrides)
 
+def manual_weight_init(algorithm):
+    best_blind_ckpt = r"D:\Classes\大一下\深度学习\project_balatro\balatrobot\run_data\blind\blind_49a7f_00000_0_2026-04-10_10-02-12\checkpoint_000008"
+    state_path = os.path.join(best_blind_ckpt, "policies", "default_policy", "policy_state.pkl")
+    with open(state_path, "rb") as f:
+        state_dict = pickle.load(f)
+    algorithm.get_policy("blind_agent").set_state(state_dict)
+    algorithm.workers.sync_weights()
 
 def run_training(
     config_path: Path | str | None = None,
