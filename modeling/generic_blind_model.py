@@ -14,10 +14,11 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         self.card_encoder = UniversalCardEncoder()
         
         self.pos_emb = nn.Parameter(torch.randn(1, self.num_tokens, 63) * 0.02)
+        self.blind_emb = nn.Embedding(32, 63)
 
         self.goal_proj = nn.Linear(1, 63)
         self.state_proj = nn.Linear(2, 63)
-        self.levels_proj = nn.Linear(4, 63)
+        self.levels_proj = nn.Linear(5, 63)
         self.deck_proj = nn.Linear(17, 63)
         self.stop_token = nn.Parameter(torch.randn(1, 1, 63))
 
@@ -51,14 +52,18 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
 
         self._hand_invalid_mask = (obs["hand"]["indices"] == 0) & (obs["hand"]["rank"] == 0)
 
-        g_tok = self.goal_proj(obs["goal"] / 10000.0).unsqueeze(1)
+        blind_id = obs["blind_index"].long().view(-1)
+        blind_identity = self.blind_emb(blind_id)
+
+        g_tok = (self.goal_proj(obs["goal"] / 10000.0) + blind_identity).unsqueeze(1)
         s_tok = self.state_proj(torch.cat([obs["hands_left"], obs["discards_left"]], dim=1)).unsqueeze(1)
         
         levels = torch.stack([
             obs["hand_stats"]["level"], 
-            obs["hand_stats"]["played_count"], 
+            obs["hand_stats"]["played_count"],
             obs["hand_stats"]["chips"] / 100.0, 
-            obs["hand_stats"]["mult"] / 10.0
+            obs["hand_stats"]["mult"] / 10.0,
+            obs["hand_stats"]["played_this_blind"],
         ], dim=-1)
         l_toks = self.levels_proj(levels)
         

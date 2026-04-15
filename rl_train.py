@@ -421,7 +421,8 @@ def blind_shop_config(
             {
                 "model": blind_model_config,
                 "kl_coeff": 0.0,
-                "lr": 2e-5,
+                "entropy_coeff": 0.001,
+                "lr": 1e-4,
                 "explore": not remote_env,
                 "lambda_": 0.99,
             },

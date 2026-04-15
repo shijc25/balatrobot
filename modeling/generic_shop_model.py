@@ -16,7 +16,9 @@ class BalatroShopModel(TorchModelV2, nn.Module):
         self.action_token = nn.Parameter(torch.randn(1, 1, 63))
         self.money_proj = nn.Linear(1, 63); self.reroll_proj = nn.Linear(1, 63)
         self.goal_proj = nn.Linear(1, 63); self.levels_proj = nn.Linear(4, 63)
+        
         self.pos_emb = nn.Parameter(torch.randn(1, self.num_tokens, 63) * 0.02)
+        self.blind_emb = nn.Embedding(32, 63)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.dim, nhead=8, dim_feedforward=self.h, activation="gelu", batch_first=True,
@@ -41,7 +43,11 @@ class BalatroShopModel(TorchModelV2, nn.Module):
 
         m_tok = self.money_proj(obs["dollars"] / 10.0).unsqueeze(1)
         r_tok = self.reroll_proj(obs["reroll_price"] / 10.0).unsqueeze(1)
-        g_tok = self.goal_proj(obs["goal"] / 10000.0).unsqueeze(1)
+        
+        blind_id = obs["blind_index"].long().view(-1)
+        blind_identity = self.blind_emb(blind_id)
+
+        g_tok = (self.goal_proj(obs["goal"] / 10000.0) + blind_identity).unsqueeze(1)
         
         lvls = torch.stack([
             obs["hand_stats"]["level"], obs["hand_stats"]["played_count"], 

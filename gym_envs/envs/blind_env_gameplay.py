@@ -41,7 +41,7 @@ class BlindGameplayHelper:
     def determine_play_hand_outcome(self, played_hand):
         game_over = self.hands_left == 0
         no_op_result = {
-            "reward": -1,
+            "reward": 0,
             "game_over": game_over,
             "hand_type": "High Card",
             "scored_cards": played_hand,

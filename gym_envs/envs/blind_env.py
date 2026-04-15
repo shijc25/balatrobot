@@ -225,12 +225,12 @@ class BlindEnv(gym.Env):
         if len(illegal_reasons) > 0:
             print("YOU CAN'T DO THAT")
             print(illegal_reasons)
-            return (self.get_obs(reset_hand=True), -1, True, False, {})
+            return (self.get_obs(reset_hand=True), 0, True, False, {})
         
         played_hand = self.G.hand.pop_cards(action[1])
         if len(played_hand) == 0:
             print("YOU CAN'T PLAY AN EMPTY HAND")
-            return (self.get_obs(), -1, True, False, {})
+            return (self.get_obs(), 0, True, False, {})
 
         if action[0] == Actions.DISCARD_HAND:
             self.discards_played += 1
@@ -245,7 +245,7 @@ class BlindEnv(gym.Env):
             self.draw_cards()
             self.reset_hand_watermarks()
             if len(self.G.hand) == 0:
-                return (self.get_obs(reset_hand=True), -1, True, False, {})
+                return (self.get_obs(reset_hand=True), 0, True, False, {})
             
             return (
                 self.get_obs(reset_hand=True),

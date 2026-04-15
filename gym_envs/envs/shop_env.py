@@ -28,7 +28,7 @@ class ShopEnv(gym.Env):
 
         self.hand_to_id = env_config.get("hand_to_id", {})
         
-        self.illegal_action_reward = env_config.get("illegal_action_reward", -1)
+        self.illegal_action_reward = env_config.get("illegal_action_reward", 0)
         self.starting_dollars = env_config.get("starting_dollars", 5.0)
 
         self.G = SharedGamestate()
@@ -243,6 +243,8 @@ class ShopEnv(gym.Env):
             "pack_card_is_joker": pack_card_is_joker.astype(np.int8),
             "pack_card_is_planet": pack_card_is_planet.astype(np.int8),
             "pack_card_level_indices": pack_card_level_indices,
+            
+            "blind_index": np.array([self.next_blind.index], dtype=np.int32),
         }
 
     def build_observation_space(self):
@@ -283,6 +285,8 @@ class ShopEnv(gym.Env):
                 "booster_cards": BaseCard.observation_space(2),
                 "owned_jokers": BaseCard.observation_space(5),
                 "pack_cards": BaseCard.observation_space(5),
+                
+                "blind_index": sp.Box(0, 30, shape=(1,), dtype=np.int32),
             }
         )
 
