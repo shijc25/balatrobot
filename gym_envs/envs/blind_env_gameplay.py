@@ -208,37 +208,10 @@ class BlindGameplayHelper:
         
         joker_marginal = post_joker_score - pre_joker_score
 
-        if self.objective_mode == "max_chips":
-            norm = self.chip_reward_normalization
-            crw = self.chips_reward_weight
-            if norm == "log_joker":
-                reward += pre_joker_score * crw
-                reward += np.log(joker_marginal * crw + 1)
-            elif norm == "sqrt_joker":
-                reward += pre_joker_score * crw
-                reward += np.sqrt(joker_marginal * crw)
-            elif norm == "log":
-                reward += np.log(post_joker_score * crw + 1)
-            elif norm == "sqrt":
-                reward += np.sqrt(post_joker_score * crw)
-            else:
-                reward += post_joker_score * crw
-        elif self.objective_mode == "blind_grind":
-        #    safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
-        #    safe_score = np.clip(safe_score, 0.0, 1e18)
-        #    reward = np.log10(safe_score + 1) * 0.01
-            reward = 0.0
-        elif self.objective_mode == "one_hand_easy":
-            if hand_type != self.easy_hand_type and self.easy_hand_type == "Flush":
-                reward = 0.5 * max(played_hand.suit_counts().values()) / 10
-                if len(played_hand) < 5:
-                    reward = 0.0
-            elif hand_type == "High Card":
-                reward = 0.0
-            elif hand_type == self.easy_hand_type:
-                reward = 0.5
-            else:
-                reward = 0.1
+        if self.objective_mode == "blind_grind":
+            safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
+            safe_score = np.clip(safe_score, 0.0, 1e18)
+            reward = np.log10(safe_score + 1) * 0.01
         
         suit_counts = [0, 0, 0, 0]
         for card in played_hand.cards:

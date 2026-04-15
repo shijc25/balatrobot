@@ -290,9 +290,13 @@ class BlindEnv(gym.Env):
                         self.G.owned_jokers = [
                             j for j in self.G.owned_jokers if j.name != "Mr. Bones"
                         ]
-
+                        
+                    current_ante = (self.round - 1) // 3 + 1
+                    
+                    blind_val = [0.0, 0.2, 0.5]
+                    
                     play_result["reward"] += (
-                        1.0 + self.hands_left * 0.2
+                        (1.0 + self.hands_left * 0.1) * (1.0 + (current_ante - 1) * 0.5 + blind_val[(self.round - 1) % 3])
                     )
                     effects = joker_round_win_effects(self.G)
                     self.handle_callbacks(effects["callbacks"])
@@ -363,65 +367,6 @@ class BlindEnv(gym.Env):
     def set_rarities(self, rarities):
         self.rarities = rarities
 
-    def expert_pretraining_adjustment(self, old_result):
-        result = deepcopy(old_result)
-        if not self.expert_pretraining or self.active_expert is None:
-            return result
-
-        hand_type_experts = {
-            1: ["Flush", "Straight Flush", "Flush house", "Flush five"],
-            2: ["Straight", "Straight Flush"],
-            3: ["Straight Flush"],
-            4: ["Four of a Kind", "Five of a kind"],
-            5: ["Full House", "Flush house"],
-            6: ["Three of a Kind"],
-            7: ["Two Pair"],
-            8: ["Pair"],
-        }
-
-        hand_type_shaping = {
-            1: lambda hand, played, scored: max(played.suit_counts().values()) * 10,
-            2: lambda hand, played, scored: played.longest_run() * 5,
-            3: lambda hand, played, scored: (
-                played.longest_run() * 20 if hand != "Straight" else 75
-            )
-            + (max(played.suit_counts().values()) * 20 if hand != "Flush" else 75),
-            4: lambda hand, played, scored: {"Three of a Kind": 150, "Pair": 50}.get(
-                hand, 0
-            ),
-            5: lambda hand, played, scored: {
-                "Three of a Kind": 150,
-                "Two Pair": 100,
-                "Pair": 50,
-            }.get(hand, 0),
-            6: lambda hand, played, scored: {"Pair": 50, "Four of a Kind": 50}.get(
-                hand, 0
-            ),
-            7: lambda hand, played, scored: {"Pair": 50, "Full House": 50}.get(hand, 0),
-            8: lambda hand, played, scored: {"Three of a Kind": 50}.get(hand, 0),
-        }
-
-        if self.active_expert == 0:
-            return result
-
-        for expert in hand_type_experts:
-            if self.active_expert == expert:
-                if result["hand_type"] not in hand_type_experts[expert]:
-                    result["hand_score"] = hand_type_shaping[expert](
-                        result["hand_type"],
-                        result["played_hand"],
-                        result["scored_cards"],
-                    )
-                    result["reward"] = result["hand_score"] / self.chip_goal
-                else:
-                    result["hand_score"] = 500
-                    if result["hand_type"] == "Pair":
-                        result["hand_score"] = 150
-                    result["reward"] = result["hand_score"] / self.chip_goal
-                return result
-
-        return result
-
     def reset(self, seed=None, options=None):
         self.G = SharedGamestate()
         self.G.max_hand_size = self.max_hand_size
@@ -461,17 +406,6 @@ class BlindEnv(gym.Env):
                     Joker.random(sparse_pool=False) for _ in 
                     range(joker_count)
                 ]
-            #    for joker in self.G.owned_jokers:
-            #        current_ante = (self.round - 1) // 3 + 1
-            #            
-            #        if "chips" in joker.state and joker.state["chips"] == 0:
-            #            joker.state["chips"] = randint(0, current_ante * 10)
-            #                
-            #        if "mult" in joker.state and joker.state["mult"] == 0:
-            #            joker.state["mult"] = randint(0, current_ante * 3)
-            #                
-            #        if "mult_mult" in joker.state and joker.state["mult_mult"] == 1:
-            #            joker.state["mult_mult"] = 1.0 + (random() * current_ante * 0.2)
 
             hands_to_randomize = []
             if self.hand_level_randomization == "per_hand":
@@ -480,7 +414,7 @@ class BlindEnv(gym.Env):
                 hands_to_randomize = [choices(self.hands)[0]]
             for h in self.hands:
                 self.G.hand_stats[h].set_level(1, force=True)
-            num_upgraded_hands = randint(1, 3)
+            num_upgraded_hands = randint(1, 2)
             upgraded_hands = sample(self.hands, num_upgraded_hands)
             for hand_type in upgraded_hands:
                 chosen_hand_level = choices(

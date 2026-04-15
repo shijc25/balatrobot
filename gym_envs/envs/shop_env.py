@@ -26,6 +26,8 @@ class ShopEnv(gym.Env):
     def __init__(self, env_config={}):
         super().__init__()
 
+        self.hand_to_id = env_config.get("hand_to_id", {})
+        
         self.illegal_action_reward = env_config.get("illegal_action_reward", -1)
         self.starting_dollars = env_config.get("starting_dollars", 5.0)
 
@@ -59,6 +61,9 @@ class ShopEnv(gym.Env):
 
         self.action_space = self.build_action_space()
         self.observation_space = self.build_observation_space()
+        
+        self.in_pack_selection = False
+        self.num_booster_contents = 5
 
     def get_card_list(self):
         special_cards = [
@@ -135,6 +140,49 @@ class ShopEnv(gym.Env):
 
     def get_obs(self):
         self.enforce_segments()
+        
+        shop_prices = np.full(2, 999.0, dtype=np.float32)
+        for i, j in enumerate(self.shop_jokers):
+            if hasattr(j, 'value'): shop_prices[i] = j.value
+
+        booster_prices = np.full(2, 999.0, dtype=np.float32)
+        for i, b in enumerate(self.boosters):
+            if hasattr(b, 'value'): booster_prices[i] = b.value
+        
+        is_joker_on_shelf = np.zeros(2, dtype=np.bool_)
+        is_planet_on_shelf = np.zeros(2, dtype=np.bool_)
+        is_buffoon_pack = np.zeros(2, dtype=np.bool_)
+        is_celestial_pack = np.zeros(2, dtype=np.bool_)
+        
+        for i, j in enumerate(self.shop_jokers):
+            if i < 2:
+                is_joker_on_shelf[i] = isinstance(j, Joker)
+                is_planet_on_shelf[i] = isinstance(j, PlanetCard)
+        
+        for i, b in enumerate(self.boosters):
+            if i < 2:
+                is_buffoon_pack[i] = (b.name == "Buffoon") if hasattr(b, 'name') else False
+                is_celestial_pack[i] = (b.name == "Celestial") if hasattr(b, 'name') else False
+        
+        current_pack_is_buffoon = False
+        current_pack_is_celestial = False
+        if self.in_pack_selection and hasattr(self, 'current_opened_pack_name'):
+            current_pack_is_buffoon = (self.current_opened_pack_name == "Buffoon")
+            current_pack_is_celestial = (self.current_opened_pack_name == "Celestial")
+            
+        pack_card_is_joker = np.zeros(5, dtype=np.bool_)
+        pack_card_is_planet = np.zeros(5, dtype=np.bool_)
+        pack_card_level_indices = np.full((5,), -1, dtype=np.int32)
+        
+        for i, card in enumerate(self.booster_contents):
+            if isinstance(card, Joker):
+                pack_card_is_joker[i] = True
+            elif isinstance(card, PlanetCard):
+                pack_card_is_planet[i] = True
+                pack_card_level_indices[i] = self.hand_to_id.get(card.hand_type, -1)
+                
+        pack_cards_obs = BaseCard.observe_list(self.booster_contents, 5)
+        
         deck_size = np.array([len(self.G.deck.all_cards)], dtype=np.float32)
         deck_ranks = np.zeros(13, dtype=np.float32)
         deck_suits = np.zeros(4, dtype=np.float32)
@@ -165,50 +213,76 @@ class ShopEnv(gym.Env):
 
         return {
             "dollars": np.array(
-                np.clip(self.G.dollars, self.min_dollars, self.max_dollars),
+                [np.clip(self.G.dollars, self.min_dollars, self.max_dollars)],
                 dtype=np.float32,
             ),
             "round_info": np.array(self.round_info(), dtype=np.float32),
-            "all_cards": BaseCard.observe_list(
-                self.get_card_list(), self.card_list_size
-            ),
-            "action_mask": self.get_action_mask(),
-            "hand_stats": HandType.observe_stats(self.G.hand_stats),
             "deck_stats": deck_stats,
-            "num_targets": target_counts,
             "blind_index": np.array([self.next_blind.index], dtype=np.int32),
-            "owned_joker_count": np.array(len(self.G.owned_jokers), dtype=np.float32),
-            "max_owned_jokers": np.array(self.G.current_joker_limit, dtype=np.float32),
-            "jokers_at_capacity": np.array(
-                int(len(self.G.owned_jokers) >= self.G.current_joker_limit),
-                dtype=np.float32,
-            ),
+            "owned_joker_count": np.array([len(self.G.owned_jokers)], dtype=np.float32),
+            
+            "reroll_price": np.array([self.reroll_cost], dtype=np.float32),
+            "shop_prices": shop_prices,
+            "booster_prices": booster_prices,
+            "goal": np.array([self.next_blind.chip_goal], dtype=np.float32),
+            "hand_stats": HandType.observe_stats(self.G.hand_stats),
+            "shop_cards": BaseCard.observe_list(self.shop_jokers, 2),
+            "booster_cards": BaseCard.observe_list(self.boosters, 2),
+            "owned_jokers": BaseCard.observe_list(self.G.owned_jokers, 5),
+            "pack_cards": pack_cards_obs,
+            
+            "is_joker_on_shelf": is_joker_on_shelf.astype(np.int8),
+            "is_planet_on_shelf": is_planet_on_shelf.astype(np.int8),
+            "is_buffoon_pack": is_buffoon_pack.astype(np.int8),
+            "is_celestial_pack": is_celestial_pack.astype(np.int8),
+            
+            "in_pack_selection": np.array([self.in_pack_selection], dtype=np.int8),
+            "current_pack_is_buffoon": np.array([current_pack_is_buffoon], dtype=np.int8),
+            "current_pack_is_celestial": np.array([current_pack_is_celestial], dtype=np.int8),
+            
+            "pack_card_is_joker": pack_card_is_joker.astype(np.int8),
+            "pack_card_is_planet": pack_card_is_planet.astype(np.int8),
+            "pack_card_level_indices": pack_card_level_indices,
         }
 
     def build_observation_space(self):
         self.card_list_size = len(self.get_card_list())
+        
+        bool_space_2 = sp.Box(0, 1, (2,), dtype=np.int8)
+        bool_space_5 = sp.Box(0, 1, (5,), dtype=np.int8)
+        bool_space_1 = sp.Box(0, 1, (1,), dtype=np.int8)
+        
         return sp.Dict(
             {
-                "dollars": sp.Box(
-                    low=self.min_dollars,
-                    high=self.max_dollars,
-                    shape=(),
-                    dtype=np.float32,
-                ),
+                "dollars": sp.Box(low=self.min_dollars, high=self.max_dollars, shape=(1,), dtype=np.float32),
+                "reroll_price": sp.Box(0, 1000, shape=(1,), dtype=np.float32),
+                "shop_prices": sp.Box(0, 1000, shape=(2,), dtype=np.float32),
+                "booster_prices": sp.Box(0, 1000, shape=(2,), dtype=np.float32),
+                "owned_joker_count": sp.Box(0, 20, shape=(1,), dtype=np.float32),
+                "goal": sp.Box(0, 1e18, shape=(1,), dtype=np.float32),
+                
                 "round_info": sp.Box(low=-20, high=200.0, shape=(6,), dtype=np.float32),
-                "all_cards": BaseCard.observation_space(self.card_list_size),
-                "action_mask": sp.Box(
-                    low=0, high=1, shape=(17 + self.G.max_hand_size,), dtype=np.float32
-                ),
-                "deck_stats": sp.Box(low=-20, high=20, shape=(37,), dtype=np.float32),
-                "hand_stats": HandType.stats_obs_space(),
-                "num_targets": sp.Box(
-                    low=0, high=3, shape=(self.max_booster_contents,), dtype=np.int32
-                ),
                 "blind_index": sp.Box(low=0, high=30, shape=(1,), dtype=np.int32),
-                "owned_joker_count": sp.Box(low=0, high=20, shape=(), dtype=np.float32),
-                "max_owned_jokers": sp.Box(low=0, high=20, shape=(), dtype=np.float32),
-                "jokers_at_capacity": sp.Box(low=0, high=1, shape=(), dtype=np.float32),
+                "hand_stats": HandType.stats_obs_space(),
+                "deck_stats": sp.Box(low=-20, high=20, shape=(37,), dtype=np.float32),
+                
+                "is_joker_on_shelf": bool_space_2,
+                "is_planet_on_shelf": bool_space_2,
+                "is_buffoon_pack": bool_space_2,
+                "is_celestial_pack": bool_space_2,
+                
+                "in_pack_selection": bool_space_1,
+                "current_pack_is_buffoon": bool_space_1,
+                "current_pack_is_celestial": bool_space_1,
+                
+                "pack_card_is_joker": bool_space_5,
+                "pack_card_is_planet": bool_space_5,
+                "pack_card_level_indices": sp.Box(-1, 12, shape=(5,), dtype=np.int32),
+                
+                "shop_cards": BaseCard.observation_space(2),
+                "booster_cards": BaseCard.observation_space(2),
+                "owned_jokers": BaseCard.observation_space(5),
+                "pack_cards": BaseCard.observation_space(5),
             }
         )
 
@@ -217,110 +291,20 @@ class ShopEnv(gym.Env):
         return self.G.dollars >= cost or (have_cc and self.G.dollars - cost >= -25)
 
     def build_action_space(self):
-        # 0) End shop
-        # 1) Reroll shop
-        # 2) End Booster
-        # 3-4) Buy jokers
-        # 5-9) Sell jokers
-        # 10-11) Buy boosters
-        # 12-16) Select booster contents
-        # return sp.MultiDiscrete([17])
-        return sp.Dict(
-            {
-                "action": sp.Discrete(17),
-                "hand_targets": sp.MultiDiscrete(
-                    [2] * self.G.max_hand_size
-                ),  # 0 or 1 for each card in hand
-            }
-        )
-
-    def get_action_mask(self):
-        mask = np.zeros(17 + self.G.max_hand_size, dtype=np.float32)
-        in_booster = len(self.booster_contents) > 0
-        # We can't end the shop from inside a booster
-        if in_booster:
-            mask[0] = 1.0
-        # Can we reroll
-        if (
-            not self.can_pay(self.reroll_cost)
-            or in_booster
-            or (not self.allow_zero_rolling and not self.can_pay(self.reroll_cost + 5))
-        ):
-            mask[1] = 1.0
-        if not in_booster:
-            mask[2] = 1.0  # Can we skip the booster
-        # Can we purchase each card
-        for i in range(1, self.shop_cards + 1):
-            if not self.check_card_purchaseable([Actions.BUY_CARD, [i]]) or in_booster:
-                mask[i + 2] = 1.0
-
-        # Can we sell each owned joker
-        for i in range(1, 6):
-            joker_i = i + 2 + self.shop_cards
-            if len(self.G.owned_jokers) < i:
-                mask[joker_i] = 1.0
-            elif (
-                not self.allow_joker_selling_before_cap
-                and len(self.G.owned_jokers) < self.G.joker_limit
-            ):
-                mask[joker_i] = 1.0
-            elif self.G.owned_jokers[i - 1].seal == BaseCard.Seals.ETERNAL:
-                mask[joker_i] = 1.0  # Can't sell eternal jokers
-
-        # Can we buy each booster
-        for i in range(1, self.max_boosters + 1):
-            if (
-                not self.check_card_purchaseable([Actions.BUY_BOOSTER, [i]])
-                or in_booster
-            ):
-                mask[i + 2 + self.shop_cards + self.G.joker_limit] = 1.0
-
-        # Can we select booster options
-        for i in range(1, self.max_booster_contents + 1):
-            index = i + 2 + self.shop_cards + self.G.joker_limit + self.max_boosters
-            if len(self.booster_contents) < i:
-                mask[index] = 1.0
-            elif self.booster_contents[i - 1].get_universal_index() == 0:
-                # Padding card from real environment
-                mask[index] = 1.0
-            # Make sure we aren't going over joker limit if the booster contents are jokers
-            elif len(self.G.owned_jokers) >= self.G.joker_limit:
-                if isinstance(self.booster_contents[i - 1], Joker):
-                    mask[index] = 1.0
-            elif isinstance(self.booster_contents[i - 1], TarotCard) or isinstance(
-                self.booster_contents[i - 1], SpectralCard
-            ):
-                if len(self.G.hand) < self.booster_contents[i - 1].num_targets:
-                    # Not enough cards in hand to target
-                    mask[index] = 1.0
-
-        # Can we target cards in the hand for tarot cards
-        for i in range(1, self.G.max_hand_size + 1):
-            if (
-                len(self.G.hand) < i or type(self.G.hand[i - 1]) != Card
-            ):  # Padding card from real environment
-                mask[
-                    i
-                    + 2
-                    + self.shop_cards
-                    + self.G.joker_limit
-                    + self.max_boosters
-                    + self.max_booster_contents
-                ] = 1.0
-
-        return mask
+        return sp.Discrete(17)
 
     def check_card_purchaseable(self, action):
         if action[0] == Actions.BUY_CARD:
             i = action[1][0] - 1
             if i >= len(self.shop_jokers):
                 return False
-            if len(self.G.owned_jokers) >= self.G.joker_limit:
-                return False
             joker = self.shop_jokers[i]
+            if isinstance(joker, Joker):
+                if len(self.G.owned_jokers) >= self.G.joker_limit:
+                    return False
             if joker.get_universal_index() == 0:
                 return False  # padding card from real environment
-            if type(joker) != Joker:  # Disallow buying tarot and planet cards for now
+            if not isinstance(joker, (Joker, PlanetCard)):
                 return False
 
             affordable = self.can_pay(joker.value)
@@ -337,26 +321,29 @@ class ShopEnv(gym.Env):
         else:
             raise ValueError(f"Unknown action type for purchasing: {action[0]}")
 
-    def action_vector_to_action(self, action):
-        if action["action"] == 0:
+    def action_vector_to_action(self, action_idx):
+        if action_idx == 0:
             return [Actions.END_SHOP]
-        elif action["action"] == 1:
+        elif action_idx == 1:
             return [Actions.REROLL_SHOP]
-        elif action["action"] == 2:
+        elif action_idx == 2:
+            return [Actions.BUY_CARD, [1]]
+        elif action_idx == 3:
+            return [Actions.BUY_CARD, [2]]
+        elif action_idx == 4:
+            return [Actions.BUY_BOOSTER, [1]]
+        elif action_idx == 5:
+            return [Actions.BUY_BOOSTER, [2]]
+        elif action_idx in range(6, 11):
+            joker_slot = action_idx - 5
+            return [Actions.SELL_JOKER, [joker_slot]]
+        elif action_idx in range(11, 16):
+            pack_slot = action_idx - 10
+            return [Actions.SELECT_BOOSTER_CARD, [pack_slot], []]
+        elif action_idx == 16:
             return [Actions.SKIP_BOOSTER_PACK]
-        elif action["action"] in [3, 4]:
-            return [Actions.BUY_CARD, [action["action"] - 2]]
-        elif action["action"] in range(5, 10):
-            return [Actions.SELL_JOKER, [action["action"] - 4]]
-        elif action["action"] in range(10, 12):
-            return [Actions.BUY_BOOSTER, [action["action"] - 9]]
-        elif action["action"] in range(12, 17):
-            hand_targets = []
-            for i, x in enumerate(action["hand_targets"]):
-                if x == 1:
-                    hand_targets.append(i + 1)
-            # print(action["hand_targets"], hand_targets)
-            return [Actions.SELECT_BOOSTER_CARD, [action["action"] - 11], hand_targets]
+        else:
+            return [Actions.END_SHOP]
 
     def roll_jokers(self):
         self.shop_jokers = []
@@ -366,7 +353,6 @@ class ShopEnv(gym.Env):
             if r <= 20:
                 joker = Joker.random(
                     unlocked_jokers=self.G.unlocked_jokers,
-                    sparse_pool=False,
                     ignore_rarity=self.ignore_rarity,
                     stake=self.stake,
                 )
@@ -453,64 +439,57 @@ class ShopEnv(gym.Env):
 
     def step(self, action):
         action = self.action_vector_to_action(action)
-        if action[0] == Actions.BUY_CARD or action[0] == Actions.BUY_BOOSTER:
-            if not self.check_card_purchaseable(action):
-                # End the shop if the action is invalid for any reason
-                reward = self.illegal_action_reward
-                print(
-                    f"Illegal action: Cannot make purchase {action[0]} with parameters {action[1]}, dollars: {self.G.dollars}, owned_jokers: {len(self.G.owned_jokers)}, boosters: {len(self.boosters)}"
-                )
-                action = [Actions.END_SHOP]
-            else:
-                reward = 0.03
-        elif action[0] == Actions.END_SHOP:
-            reward = 0.0
+        
+        is_legal = True
+        if action[0] in [Actions.BUY_CARD, Actions.BUY_BOOSTER]:
+            is_legal = self.check_card_purchaseable(action)
         elif action[0] == Actions.REROLL_SHOP:
-            if not self.can_pay(self.reroll_cost):
-                reward = self.illegal_action_reward
-                print("Illegal action: Not enough dollars to reroll shop")
-                action = [Actions.END_SHOP]
-            else:
-                reward = 0.01
-            #   reward = 0.0
+            is_legal = self.can_pay(self.reroll_cost)
         elif action[0] == Actions.SELL_JOKER:
-            if len(self.G.owned_jokers) < action[1][0]:
-                reward = self.illegal_action_reward
-                print("Illegal action: Not enough jokers to sell")
-                action = [Actions.END_SHOP]
-            else:
-                reward = 0.0
+            is_legal = len(self.G.owned_jokers) >= action[1][0]
+            
+        if not is_legal:
+            reward = self.illegal_action_reward
+            print(f"DEBUG: Model picked ILLEGAL {action}.")
+            action = [Actions.END_SHOP]
         else:
-            reward = 0.0
-
+            reward = 0.01 if action[0] != Actions.END_SHOP and action[0] != Actions.SELL_JOKER else 0.0
+        
         self.take_action(action)
+        
+        if is_legal and action[0] == Actions.BUY_BOOSTER:
+            self.in_pack_selection = True
+        elif action[0] in [Actions.SELECT_BOOSTER_CARD, Actions.SKIP_BOOSTER_PACK]:
+            if self.booster_choices_left <= 0 or action[0] == Actions.SKIP_BOOSTER_PACK:
+                self.in_pack_selection = False
+                self.booster_contents = []
+        
         obs = self.get_obs()
+        done = (action[0] == Actions.END_SHOP) and (not self.in_pack_selection)
+
         return (
             obs,
             reward,
-            action[0] == Actions.END_SHOP,
+            done,
             False,
             {},
-            # {
-            #     "shop_ended": action[0] == Actions.END_SHOP,
-            #     "owned_joker_ids": [
-            #         j.get_universal_index() for j in self.G.owned_jokers
-            #     ],
-            # },
         )
 
     def take_action(self, action):
         if action[0] == Actions.BUY_CARD:
-            self.telemetry["jokers_purchased"] += 1
             purchased_joker = self.shop_jokers.pop(action[1][0] - 1)
-            purchased_joker.segment = BaseCard.Segments.JOKER
             self.G.dollars -= purchased_joker.value
-            # Loses half the value when you drive it off the lot
-            purchased_joker.value = max(int(purchased_joker.value / 2.0), 1)
-            self.G.owned_jokers.append(purchased_joker)
-            self.jokers_purchased += 1
-            if type(purchased_joker) == BaseCard:
-                raise ValueError(f"Purchased joker is not a Joker: {purchased_joker}")
+            if isinstance(purchased_joker, PlanetCard):
+                purchased_joker.trigger(targets=[], gamestate=self.G)
+            else:
+                self.telemetry["jokers_purchased"] += 1
+                purchased_joker.segment = BaseCard.Segments.JOKER
+                # Loses half the value when you drive it off the lot
+                purchased_joker.value = max(int(purchased_joker.value / 2.0), 1)
+                self.G.owned_jokers.append(purchased_joker)
+                self.jokers_purchased += 1
+                if type(purchased_joker) == BaseCard:
+                    raise ValueError(f"Purchased joker is not a Joker: {purchased_joker}")
         elif action[0] == Actions.REROLL_SHOP:
             self.telemetry["rerolls"] += 1
             self.G.dollars -= self.reroll_cost
@@ -537,6 +516,7 @@ class ShopEnv(gym.Env):
         elif action[0] == Actions.BUY_BOOSTER:
             self.telemetry["boosters_purchased"] += 1
             booster = self.boosters.pop(action[1][0] - 1)
+            self.current_opened_pack_name = booster.name
             self.telemetry[f"{booster.full_name()}_purchased"] += 1
             self.booster_choices_left = booster.num_choices
             self.G.dollars -= booster.value
@@ -563,7 +543,8 @@ class ShopEnv(gym.Env):
                 targets = []
                 if len(action) > 2:
                     for x in action[2]:
-                        targets.append(self.G.hand[x - 1])  # Convert to 0-indexed
+                        if 0 <= x - 1 and x - 1 < len(self.G.hand.cards):
+                            targets.append(self.G.hand[x - 1])
                 result = card.trigger(targets=targets, gamestate=self.G)
                 if isinstance(card, PlanetCard):
                     self.telemetry[f"booster_choices/planet/{card.name}"] += 1
@@ -608,13 +589,9 @@ class ShopEnv(gym.Env):
         self.G.deck = Deck.from_gamestate_deck(gamestate.get("deck", []))
         self.hand = Hand.from_gamestate_hand(gamestate.get("hand", []))
         self.enforce_segments()
-        # print(self.get_action_mask())
-        # self.G.unlocked_jokers = set(gamestate.get("unlocked_jokers", []))
-        # self.G.hand_stats = HandType.load_from_gamestate(gamestate.get("hand_stats", {}))
 
     def enforce_segments(self):
         for x in self.shop_jokers:
-            # x.segment = BaseCard.Segments.SHOP_BUYABLE
             x.segment = BaseCard.Segments.SHOP_JOKER
         for x in self.G.owned_jokers:
             x.segment = BaseCard.Segments.JOKER

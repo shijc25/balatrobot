@@ -125,7 +125,7 @@ class Joker(BaseCard):
     def random(
         force_rarity=None,
         unlocked_jokers=set(),
-        sparse_pool=False,
+        sparse_pool=True,
         ignore_rarity=False,
         stake=0,  # Only for determining sticker pool
     ):

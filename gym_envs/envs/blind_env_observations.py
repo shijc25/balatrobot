@@ -97,14 +97,14 @@ class BlindObservationHelper:
         if self.G.joker_limit > 0:
             space["jokers"] = BaseCard.observation_space(self.G.joker_limit)
 
-        if self.deck_counts_obs:
-            space["deck_ranks"] = sp.Box(low=0, high=5, shape=(13,), dtype=np.float32)
-            space["deck_suits"] = sp.Box(low=0, high=10, shape=(4,), dtype=np.float32)
+        space["deck_ranks"] = sp.Box(low=0, high=5, shape=(13,), dtype=np.float32)
+        space["deck_suits"] = sp.Box(low=0, high=10, shape=(4,), dtype=np.float32)
 
         if self.objective_mode == "blind_grind":
             space["round"] = sp.Box(low=-15, high=40, shape=(1,), dtype=np.float32)
             space["chip_goals"] = sp.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
             space["goal_progress"] = sp.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
+            space["goal"] = sp.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
 
         if self.blind_obs:
             space["blind_index"] = sp.Box(low=0, high=30, shape=(1,), dtype=np.float32)
@@ -151,20 +151,6 @@ class BlindObservationHelper:
             if net_homogeneity > 0:
                 self.suit_homogeneity_watermark = new_homogeneity
                 return net_homogeneity * self.suit_homogeneity_bonus
-        return 0.0
-
-    def calc_hand_potential_bonus(self) -> float:
-        hand_type = self.G.hand.evaluate()[0]
-        chips, mult = self.G.hand_stats[hand_type].scores()
-        hand_score = chips * mult
-        net_hand_score = hand_score - self.hand_score_watermark
-        self.hand_score_watermark = hand_score
-        if self.objective_mode == "max_chips":
-            return net_hand_score * self.chips_reward_weight * self.discard_potential_reward
-        if self.objective_mode == "blind_grind":
-            if net_hand_score < 0:
-                return 0.0
-            return net_hand_score * self.discard_potential_reward / self.chip_goal
         return 0.0
 
     def get_obs(self, reset_hand: bool = False, new_hand=None):
@@ -228,14 +214,13 @@ class BlindObservationHelper:
                 override_segment=BaseCard.Segments.JOKER,
             )
 
-        if self.deck_counts_obs:
-            deck_ranks = np.zeros(13, dtype=np.float32)
-            deck_suits = np.zeros(4, dtype=np.float32)
-            for card in self.G.deck.remaining_cards:
-                deck_ranks[card.value - 2] += 1
-                deck_suits[card.suit_index()] += 1
-            obs["deck_ranks"] = deck_ranks / 4
-            obs["deck_suits"] = deck_suits / 13
+        deck_ranks = np.zeros(13, dtype=np.float32)
+        deck_suits = np.zeros(4, dtype=np.float32)
+        for card in self.G.deck.remaining_cards:
+            deck_ranks[card.value - 2] += 1
+            deck_suits[card.suit_index()] += 1
+        obs["deck_ranks"] = deck_ranks / 4
+        obs["deck_suits"] = deck_suits / 13
 
         if self.objective_mode == "blind_grind":
 
@@ -251,6 +236,7 @@ class BlindObservationHelper:
 
             obs["chip_goals"] = np.array(chip_norms(self.chip_goal), dtype=np.float32)
             obs["round"] = np.array([self.round], dtype=np.float32)
+            obs["goal"] = np.array([self.chip_goal], dtype=np.float32)
 
             remaining_chips = self.chip_goal - self.chips
             remaining_chips = max(remaining_chips, 0)

@@ -16,7 +16,11 @@ class BlindShopEnv(MultiAgentEnv):
         env_config={},
     ):
         self.blind_env = BlindEnv(env_config.get("blind_env_config", {}))
-        self.shop_env = ShopEnv(env_config.get("shop_env_config", {}))
+        
+        shop_cfg = env_config.get("shop_env_config", {})
+        shop_cfg["hand_to_id"] = self.blind_env.hand_to_id
+        self.shop_env = ShopEnv(shop_cfg)
+        
         self.stake = env_config.get("stake", 0)
         self.blind_env.stake = self.stake
         self.shop_env.stake = self.stake
@@ -311,7 +315,7 @@ class BlindShopEnv(MultiAgentEnv):
         self.shop_env.round += 1
         self.shop_env.new_shop()
         
-        reward = 0.0
+        reward = interest * 0.01
         
         return self.shop_env.get_obs(), reward, self.held_shop_info
 

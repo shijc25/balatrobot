@@ -241,7 +241,7 @@ class BaseCard:
             "suit": np.zeros(max_count, dtype=np.int32),
             "rank": np.zeros(max_count, dtype=np.int32),
         }
-        for i, card in enumerate(cards):
+        for i, card in zip(range(max_count), cards):
             obs["indices"][i] = card.get_universal_index()
             obs["enhancement"][i] = card.get_enhancement()
             obs["edition"][i] = card.get_edition()

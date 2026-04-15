@@ -1,8 +1,5 @@
 import argparse
-import cProfile
-import io
 import os
-import pstats
 import pickle
 from pathlib import Path
 
@@ -13,39 +10,16 @@ import ray.rllib
 from ray.rllib.algorithms.ppo import PPOConfig, PPO, PPO
 from ray import shutdown
 
-# from gym_envs.envs.hierarchical_env import HierarchicalEnv
 from gym_envs.envs.blind_env import BlindEnv
 from gym_envs.envs.shop_env import ShopEnv
-from ray.rllib.policy.view_requirement import ViewRequirement
-from ray.rllib.policy.torch_policy_v2 import TorchPolicyV2
-from ray.rllib.policy.sample_batch import SampleBatch
-from ray.air import RunConfig
 
 from copy import deepcopy
-from ray.tune.search.bayesopt import BayesOptSearch
 
-from modeling.generic_blind_model import (
-    BalatroBlindModel as GenericBalatroBlindModel,
-)
-from modeling.generic_shop_model import BalatroShopModel as GenericBalatroShopModel
-from modeling.distributions import (
-    ARBinaryDistribution,
-    ARChooseOrStopDistribution,
-    ARChooseOrStopStackedDistribution,
-    DualSubsetDistribution,
-    ExpertModeCountsDistribution,
-    ExpertOptionsDistribution,
-    LinearExpertsDistribution,
-    ModeCountBinaryDistribution,
-    PlayDiscardBinaryDistribution,
-    ShopActionAndHandTargetsDistribution,
-    SparseSubsetAndMaskDistribution,
-)
-from modeling.gumbel_noise_sampler import GumbelNoiseSamplerDist
+from modeling.generic_blind_model import BalatroBlindModel
+from modeling.generic_shop_model import BalatroShopModel
 from ray.rllib.models import ModelCatalog
-from ray.tune.registry import register_env, register_trainable
-from ray.rllib.policy.torch_policy_v2 import TorchPolicyV2
-
+from modeling.distributions import AutoregressiveCardDist
+from modeling.distributions import ShopActionDist
 from gymnasium import spaces as sp
 from ray.rllib.algorithms.algorithm import Algorithm
 from gym_envs.envs.blind_env import BlindEnv
@@ -79,22 +53,15 @@ DEFAULT_RAY_CONFIG: dict[str, Any] = {"ignore_reinit_error": True}
 PARAMETER_DEFAULTS: dict[str, Any] = {
     "max_jokers": 5,
     "max_hand_size": 10,
-    "target_hand_reward": 0.0,
-    "num_experts": 3,
     "subset_hand_types": None,
     "subset_scoring_cards": None,
     "demo_mode": False,
     "shared_encoder": False,
-    "blind_action_dist": "ar_choose_or_stop_stacked_dist",
+    "blind_action_dist": "ar_custom_dist",
 }
 
 ACTION_MODE_LOOKUP = {
-    "mode_count_binary_dist": "mode_count_binary",
-    "play_discard_binary_dist": "multi_binary",
-    "expert_mode_counts_dist": "expert_mode_counts",
-    "dual_subset": "dual_subset",
-    "sparse_subset_and_mask_dist": "play_subset_discard_mask",
-    "ar_choose_or_stop_stacked_dist": "stacked_binary_masks",
+    "ar_custom_dist": "ar_custom_dist",
 }
 
 _OPTIONAL_SENTINELS = {"", "none", "null"}
@@ -104,42 +71,28 @@ class CuriosityTorchPolicy(PPOTorchPolicy):
     def __init__(self, obs_space, act_space, config):
         super().__init__(obs_space, act_space, config)
 
-        # register your two new columns for training batches
-        # self.view_requirements["hand_scores_aux_output"] = ViewRequirement(
-        #     data_col="hand_scores_aux_output",
-        #     shift=0,  # exact same timestep
-        #     used_for_compute_actions=False,
-        #     used_for_training=True,  # include in postprocessed SampleBatch
-        # )
-        # self.view_requirements["has_jokers"] = ViewRequirement(
-        #     data_col="has_jokers",
-        #     shift=0,
-        #     used_for_compute_actions=False,
-        #     used_for_training=True,
-        # )
-
     def extra_action_out(self, input_dict, state_batches, model, action_dist):
         info = super().extra_action_out(input_dict, state_batches, model, action_dist)
-        # grab your stored aux preds off the model
-        # if hasattr(model, "play_aux") and hasattr(model, "_has_jokers"):
-        #     info["hand_scores_aux_output"] = model.play_aux
-        #     info["has_jokers"] = model._has_jokers
         return info
 
-
-# 2) Subclass PPO to return that policy as its default
 class CuriosityPPO(PPO):
     @classmethod
     def get_default_policy_class(cls, config):
         return CuriosityTorchPolicy
-
+    
+def register_all():
+    ModelCatalog.register_custom_action_dist("ar_custom_dist", AutoregressiveCardDist)
+    ModelCatalog.register_custom_action_dist("shop_custom_dist", ShopActionDist)
+    ModelCatalog.register_custom_model("generic_blind_model", BalatroBlindModel)
+    ModelCatalog.register_custom_model("generic_shop_model", BalatroShopModel)
+        
+register_all()
 
 def policy_mapping(agent_id, episode, **kwargs):
     if agent_id == "blind":
         return "blind_policy"
     else:
         return "shop_policy"
-
 
 def flatten_dict(d, parent_key="", sep="/"):
     items = []
@@ -153,17 +106,13 @@ def flatten_dict(d, parent_key="", sep="/"):
             items.append((new_key, v))
     return dict(items)
 
-
 def log_results(i, result):
-    # Remove some redundant keys from the result dict
-    # Not sure why rllib even makes these honestly, maybe they will matter later?
     keys_to_remove = ["sampler_results", "env_runner_results"]
     for key in keys_to_remove:
         if key in result:
             del result[key]
     keys_to_remove = []
     for key in result["custom_metrics"]:
-        # Remove autogenerated min and max keys
         if key.endswith("_min") or key.endswith("_max"):
             keys_to_remove.append(key)
     for key in keys_to_remove:
@@ -171,15 +120,13 @@ def log_results(i, result):
     wandb.log(
         flatten_dict(result),
         step=i,
-        commit=i % 5 == 0,  # Commit every 10 steps
+        commit=i % 5 == 0,
     )
-
 
 def _normalize_optional(value: Any) -> Any:
     if isinstance(value, str) and value.lower() in _OPTIONAL_SENTINELS:
         return None
     return value
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Balatro RL agents with PPO.")
@@ -203,7 +150,6 @@ def parse_args():
         help="Resolve configuration and exit without launching training.",
     )
     return parser.parse_args()
-
 
 def apply_ppo_overrides(
     config: PPOConfig, overrides: dict[str, Any] | None
@@ -250,7 +196,6 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "max_hand_size": max_hand_size,
         "action_mode": ACTION_MODE_LOOKUP[params["blind_action_dist"]],
         "hand_mode": "base_card",
-        "num_experts": params["num_experts"],
         "imagined_trajectories": False,
         "expert_pretraining": False,
         "deck_cls": Deck,
@@ -271,21 +216,16 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "scoring_cards_mask_obs": subset_scoring_cards is not None,
         "force_play": True,
         "chips_reward_weight": 0.0,
-        "hand_type_reward_weight": target_hand_reward,
-        "infinite_deck": False,
         "bias": 0.0,
         "rarity_bonus": 0.0,
         "target_hand_obs": target_hand_reward > 0.0,
         "max_jokers": max_jokers,
-        "chip_reward_normalization": "log_joker",
         "joker_count_range": (0, 0),
         "hand_level_range": (1, 1),
-        "hand_level_randomization": "per_hand",
         "joker_count_bias_exponent": -1.0,
         "round_range": (1, 1),
     }
     return config
-
 
 def default_blind_model_config(params: dict[str, Any]) -> dict[str, Any]:
     subset_hand_types = params.get("subset_hand_types")
@@ -295,17 +235,10 @@ def default_blind_model_config(params: dict[str, Any]) -> dict[str, Any]:
         "custom_action_dist": params["blind_action_dist"],
         "custom_model_config": {
             "embed_cards": True,
-            "card_embedding_size": 64,
-            "embed_suits_ranks": "learned",
-            "hidden_size": 256,
-            "hidden_layer_count": 2,
-            "self_attention_layers": 2,
-            "self_attention_heads": 4,
             "action_method": "autoregressive",
             "discard_as_intent": True,
             "hand_representation_method": "context_token",
             "jokers_in_hand_attention": False,
-            "num_experts": params["num_experts"],
             "max_jokers": params["max_jokers"],
             "max_supported_hand_size": params["max_hand_size"],
             "joker_types": 151,
@@ -333,22 +266,14 @@ def default_blind_model_config(params: dict[str, Any]) -> dict[str, Any]:
     }
     return config
 
-
 def default_shop_model_config(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "custom_model": "generic_shop_model",
-        "custom_action_dist": "shop_action_and_hand_targets_dist",
+        "custom_action_dist": "shop_custom_dist",
         "custom_model_config": {
             "max_hand_size": params["max_hand_size"],
-            "card_embedding_size": 64,
-            "attention_layers": 1,
-            "attention_heads": 4,
-            "action_head_depth": 2,
-            "action_method": "convolutional",
-            "shared_encoder": params["shared_encoder"],
         },
     }
-
 
 def default_blind_shop_env_config(
     params: dict[str, Any], blind_env_config: dict[str, Any]
@@ -371,9 +296,6 @@ def default_blind_shop_env_config(
         "catchup_probability": 0.0,
     }
 
-
-# dummy test environment for testing purposes
-# Doesn't actually have any way of validating that the agent is doing the right thing
 def shop_config(model_config=None, ppo_overrides=None):
     env_config = {}
     model_config = model_config or {}
@@ -385,7 +307,7 @@ def shop_config(model_config=None, ppo_overrides=None):
             observation_space=ShopEnv(env_config).build_observation_space(),
             action_space=ShopEnv(env_config).build_action_space(),
         )
-        # .callbacks(RoundLoggerCallback)
+        .callbacks(RoundLoggerCallback)
         .framework("torch", torch_compile_learner=True)
         .resources(num_gpus=1, num_cpus_per_worker=1)
         .env_runners(
@@ -410,13 +332,6 @@ def shop_config(model_config=None, ppo_overrides=None):
             gamma=0.99,
             model=model_config,
         )
-        # .evaluation(
-        #     evaluation_num_env_runners=1,
-        #     evaluation_interval=1,
-        #     evaluation_config={"explore": False},
-        #     evaluation_parallel_to_training=True,
-        #     evaluation_duration="auto",
-        # )
     )
 
     return apply_ppo_overrides(config, ppo_overrides)
@@ -449,9 +364,6 @@ def blind_config(
             num_envs_per_env_runner=100,
             sample_timeout_s=60,
             rollout_fragment_length="auto",
-            # This would be good to use, but it breaks certain data passed to the model
-            # e.g. card indices that need to be passed into the embedding layer
-            # observation_filter="MeanStdFilter",
             batch_mode="complete_episodes",
         )
         .training(
@@ -459,29 +371,26 @@ def blind_config(
             sgd_minibatch_size=int(2**11),
             num_sgd_iter=10,
             lr=2e-4,
-            # lr=tune.loguniform(1e-5, 1e-3),
             grad_clip=0.5,
             clip_param=0.1,
             kl_coeff=0.0,
             vf_loss_coeff=0.5,
             vf_clip_param=10.0,
-            entropy_coeff=0.00,
-            # entropy_coeff=tune.loguniform(0.0001, 0.02),
+            entropy_coeff=0.0,
             lambda_=0.95,
             gamma=0.99,
             model=blind_model_config,
         )
-        # .evaluation(
-        #     evaluation_num_env_runners=1,
-        #     evaluation_interval=1,
-        #     evaluation_config={"explore": False},
-        #     evaluation_parallel_to_training=True,
-        #     evaluation_duration="auto",
-        # )
     )
+    
+#    class WeightInitCallback(RoundLoggerCallback):
+#        def on_algorithm_init(self, *, algorithm, **kwargs):
+#            manual_weight_init(algorithm)
+#            super().on_algorithm_init(algorithm=algorithm, **kwargs)
+#
+#    config.callbacks(WeightInitCallback)
 
     return apply_ppo_overrides(config, ppo_overrides)
-
 
 def blind_shop_config(
     blind_env_config=None,
@@ -512,7 +421,8 @@ def blind_shop_config(
             {
                 "model": blind_model_config,
                 "kl_coeff": 0.0,
-                "explore": False,
+                "lr": 2e-5,
+                "explore": not remote_env,
                 "lambda_": 0.99,
             },
         ),
@@ -523,8 +433,8 @@ def blind_shop_config(
             {
                 "model": shop_model_config,
                 "kl_coeff": 0.0,
-                "entropy_coeff": 0.01,
-                "entropy_coeff_schedule": [[0, 0.01], [2e5, 0.003], [1e6, 0.0]],
+                "entropy_coeff": 0.001,
+                "lr": 1e-4,
                 "explore": not remote_env,
                 "lambda_": 0.95,
             },
@@ -554,7 +464,7 @@ def blind_shop_config(
         .multi_agent(
             policies=POLICIES,
             policy_mapping_fn=policy_mapper,
-            policies_to_train=(["shop_agent"] if not remote_env else []),
+            policies_to_train=(["blind_agent", "shop_agent"] if not remote_env else []),
         )
         .training(
             train_batch_size=int(2**15),
@@ -570,12 +480,12 @@ def blind_shop_config(
         )
     )
     
-    class WeightInitCallback(RoundLoggerCallback):
-        def on_algorithm_init(self, *, algorithm, **kwargs):
-            manual_weight_init(algorithm)
-            super().on_algorithm_init(algorithm=algorithm, **kwargs)
-
-    config.callbacks(WeightInitCallback)
+#    class WeightInitCallback(RoundLoggerCallback):
+#        def on_algorithm_init(self, *, algorithm, **kwargs):
+#            manual_weight_init(algorithm)
+#            super().on_algorithm_init(algorithm=algorithm, **kwargs)
+#
+#    config.callbacks(WeightInitCallback)
 
     if not remote_env and not smoke:
         config = config.evaluation(
@@ -589,7 +499,7 @@ def blind_shop_config(
     return apply_ppo_overrides(config, ppo_overrides)
 
 def manual_weight_init(algorithm):
-    best_blind_ckpt = r"D:\Classes\大一下\深度学习\project_balatro\balatrobot\run_data\blind\blind_49a7f_00000_0_2026-04-10_10-02-12\checkpoint_000008"
+    best_blind_ckpt = r""
     state_path = os.path.join(best_blind_ckpt, "policies", "default_policy", "policy_state.pkl")
     with open(state_path, "rb") as f:
         state_dict = pickle.load(f)
@@ -618,47 +528,6 @@ def run_training(
 
     analysis = None
     try:
-        ModelCatalog.register_custom_action_dist(
-            "play_discard_binary_dist", PlayDiscardBinaryDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "auto_regressive_binary_dist", ARBinaryDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "ar_choose_or_stop_dist", ARChooseOrStopDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "ar_choose_or_stop_stacked_dist", ARChooseOrStopStackedDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "linear_experts_dist", LinearExpertsDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "expert_options_dist", ExpertOptionsDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "mode_count_binary_dist", ModeCountBinaryDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "shop_action_and_hand_targets_dist", ShopActionAndHandTargetsDistribution
-        )
-        ModelCatalog.register_custom_action_dist(
-            "gumbel_noise_sampler", GumbelNoiseSamplerDist
-        )
-        ModelCatalog.register_custom_action_dist(
-            "expert_mode_counts_dist", ExpertModeCountsDistribution
-        )
-
-        ModelCatalog.register_custom_model(
-            "generic_blind_model", GenericBalatroBlindModel
-        )
-        ModelCatalog.register_custom_model(
-            "generic_shop_model", GenericBalatroShopModel
-        )
-        ModelCatalog.register_custom_action_dist("dual_subset", DualSubsetDistribution)
-        ModelCatalog.register_custom_action_dist(
-            "sparse_subset_and_mask_dist", SparseSubsetAndMaskDistribution
-        )
 
         parameters_raw = deep_merge(
             PARAMETER_DEFAULTS, config_data.get("parameters", {})
