@@ -315,7 +315,9 @@ class BlindShopEnv(MultiAgentEnv):
         self.shop_env.round += 1
         self.shop_env.new_shop()
         
-        reward = interest * 0.01
+        reward = interest * 0.003
+        
+        reward += 1.0 + self.blind_env.hands_left * 0.1
         
         return self.shop_env.get_obs(), reward, self.held_shop_info
 

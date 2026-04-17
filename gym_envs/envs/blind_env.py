@@ -290,13 +290,9 @@ class BlindEnv(gym.Env):
                         self.G.owned_jokers = [
                             j for j in self.G.owned_jokers if j.name != "Mr. Bones"
                         ]
-                        
-                    current_ante = (self.round - 1) // 3 + 1
-                    
-                    blind_val = [0.0, 0.2, 0.5]
                     
                     play_result["reward"] += (
-                        (1.0 + self.hands_left * 0.1) * (1.0 + (current_ante - 1) * 0.5 + blind_val[(self.round - 1) % 3])
+                        1.0
                     )
                     effects = joker_round_win_effects(self.G)
                     self.handle_callbacks(effects["callbacks"])

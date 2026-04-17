@@ -76,7 +76,7 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         h_tok = h_tok[:, :10, :] 
         
         stop_tok = self.stop_token.expand(B, -1, -1)
-
+        
         self._cached_seq_63 = torch.cat([g_tok, s_tok, l_toks, d_tok, j_tok, h_tok, stop_tok], dim=1) + self.pos_emb
         
         dummy_mask = torch.zeros(B, 31, 1, device=device)
@@ -88,12 +88,17 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
     def value_function(self):
         return self._val_out
 
-    def ar_step(self, hand_mask, step_idx):
+    def ar_step(self, hand_mask, step_idx, selected_mode=None):
         B = self._cached_seq_63.shape[0]
         device = self._cached_seq_63.device
         
         full_mask = torch.zeros(B, 31, 1, device=device)
+        
         full_mask[:, 20:30, 0] = hand_mask 
+        
+        if selected_mode is not None:
+            mode_flag = (selected_mode * 2 - 1).float() 
+            full_mask[:, 0, 0] = mode_flag
         
         x = torch.cat([self._cached_seq_63, full_mask], dim=2)
         features = self.transformer(x)
@@ -104,7 +109,6 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         card_logits = self.selection_head(card_features).squeeze(-1)
         
         safe_card_logits = card_logits.clone()
-        
         safe_card_logits[:, :10] = safe_card_logits[:, :10].masked_fill(hand_mask.bool(), -1e9)
         safe_card_logits[:, :10] = safe_card_logits[:, :10].masked_fill(self._hand_invalid_mask, -1e9)
         if step_idx == 1:

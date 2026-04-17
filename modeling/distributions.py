@@ -23,13 +23,16 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
             
             hand_mask = torch.zeros(B, 10, device=device)
             actions = []
+            selected_mode = None
             
             for i in range(6):
-                mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i)
+                mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i, selected_mode=selected_mode)
                 
                 if i == 0:
                     mode_dist = Categorical(logits=mode_logits)
-                    actions.append(mode_dist.sample())
+                    mode_act = mode_dist.sample()
+                    actions.append(mode_act)
+                    selected_mode = mode_act
                     continue
                     
                 card_dist = Categorical(logits=card_logits)
@@ -52,12 +55,15 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
             
             hand_mask = torch.zeros(B, 10, device=device)
             actions = []
+            selected_mode = None
             
             for i in range(6):
-                mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i)
+                mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i, selected_mode=selected_mode)
                 
                 if i == 0:
-                    actions.append(torch.argmax(mode_logits, dim=-1))
+                    mode_act = torch.argmax(mode_logits, dim=-1)
+                    actions.append(mode_act)
+                    selected_mode = mode_act
                     continue
                 
                 card_act = torch.argmax(card_logits, dim=-1)
@@ -80,11 +86,14 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
         total_logp = torch.zeros(B, device=device)
         total_entropy = torch.zeros(B, device=device)
         stopped = torch.zeros(B, dtype=torch.bool, device=device)
+        
+        true_mode = actions[:, 0]
 
         for i in range(6):
             if stopped.all() and i > 0: break
                 
-            mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i)
+            current_mode = None if i == 0 else true_mode
+            mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i, selected_mode=current_mode)
             
             if i == 0:
                 mode_dist = Categorical(logits=mode_logits)
