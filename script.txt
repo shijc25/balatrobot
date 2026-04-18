@@ -1,1 +1,1 @@
-python rl_train.py --config configs/blind_shop.toml --set run.restore="D:\Classes\大一下\深度学习\project_balatro\balatrobot\run_data\blind_shop\blind_shop_468b4_00000_0_2026-04-17_17-39-06\checkpoint_000010"
+python rl_train.py --config configs/blind_shop.toml --set run.restore="/root/balatrobot/run_data/blind_shop/blind_shop_ed571_00000_0_2026-04-18_18-04-02/checkpoint_000001"

@@ -292,7 +292,7 @@ class BlindEnv(gym.Env):
                         ]
                     
                     play_result["reward"] += (
-                        1.0
+                        1.0 + self.hands_left * 0.1
                     )
                     effects = joker_round_win_effects(self.G)
                     self.handle_callbacks(effects["callbacks"])

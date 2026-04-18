@@ -421,8 +421,8 @@ def blind_shop_config(
             {
                 "model": blind_model_config,
                 "kl_coeff": 0.0,
-                "entropy_coeff": 0.0001,
-                "lr": 1e-5,
+                "entropy_coeff": 0.0,
+                "lr": 5e-5,
                 "explore": not remote_env,
                 "lambda_": 0.99,
             },
@@ -435,7 +435,7 @@ def blind_shop_config(
                 "model": shop_model_config,
                 "kl_coeff": 0.0,
                 "entropy_coeff": 0.001,
-                "lr": 1e-4,
+                "lr": 5e-5,
                 "explore": not remote_env,
                 "lambda_": 0.95,
             },
@@ -451,7 +451,7 @@ def blind_shop_config(
         PPOConfig(CuriosityPPO)
         .environment(env=BlindShopEnv, env_config=blind_shop_env_config)
         .callbacks(RoundLoggerCallback)
-        .framework("torch")
+        .framework("torch", torch_compile_learner=True)
         .experimental(_enable_new_api_stack=False)
         .resources(num_gpus=1, num_cpus_per_worker=1)
         .env_runners(
@@ -473,7 +473,7 @@ def blind_shop_config(
             num_sgd_iter=3,
             lr=1e-4,
             grad_clip=3,
-            clip_param=0.1,
+            clip_param=0.2,
             vf_clip_param=10.0,
             entropy_coeff=0.001,
             gamma=0.99,
