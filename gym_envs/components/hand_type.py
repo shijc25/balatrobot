@@ -62,9 +62,9 @@ class HandType:
         for hand in stats.values():
             index = hand.index
             levels[index] = hand.get_level()
-            chips[index] = hand.chips / 100.0
-            mults[index] = hand.mult / 10.0
-            played_count[index] = hand.play_count / 10.0
+            chips[index] = hand.chips
+            mults[index] = hand.mult
+            played_count[index] = hand.play_count
             played_this_blind[index] = 1.0 if hand.played_this_blind else 0.0
 
         return {
@@ -80,9 +80,9 @@ class HandType:
         return sp.Dict(
             {
                 "level": sp.Box(0, 50, (12,), np.float32),
-                "chips": sp.Box(-1, 20, (12,), np.float32),
-                "mult": sp.Box(-1, 20, (12,), np.float32),
-                "played_count": sp.Box(0, 30, (12,), np.float32),
+                "chips": sp.Box(-1, 2000, (12,), np.float32),
+                "mult": sp.Box(-1, 200, (12,), np.float32),
+                "played_count": sp.Box(0, 300, (12,), np.float32),
                 "played_this_blind": sp.Box(0, 1, (12,), np.float32),
             }
         )

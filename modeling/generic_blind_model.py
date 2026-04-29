@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from gym_envs.universal_card_encoder import UniversalCardEncoder
+from torch.utils.checkpoint import checkpoint
 
 class BalatroBlindModel(TorchModelV2, nn.Module):
     def __init__(self, obs_space, action_space, num_outputs, model_config, name, **kwargs):
@@ -10,30 +11,29 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
 
         self.dim = 64
         self.num_tokens = 31
-        self.h = 128
+        self.h = 256
         self.card_encoder = UniversalCardEncoder()
         
         self.pos_emb = nn.Parameter(torch.randn(1, self.num_tokens, 63) * 0.02)
         self.blind_emb = nn.Embedding(32, 63)
 
-        self.goal_proj = nn.Linear(1, 63)
+        self.goal_proj = nn.Linear(4, 63)
         self.state_proj = nn.Linear(2, 63)
-        self.levels_proj = nn.Linear(5, 63)
+        self.levels_proj = nn.Linear(7, 63)
         self.deck_proj = nn.Linear(17, 63)
         self.stop_token = nn.Parameter(torch.randn(1, 1, 63))
 
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=self.dim, nhead=4, dim_feedforward=self.h, 
+            d_model=self.dim, nhead=8, dim_feedforward=self.h,
             activation="gelu", batch_first=True, dropout=0.0,
             norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=4)
 
         def make_head(out_dim):
             return nn.Sequential(
-                nn.Linear(self.dim, self.h),
-                nn.LayerNorm(self.h),
-                nn.GELU(),
+                nn.Linear(self.dim, self.h), nn.LayerNorm(self.h), nn.GELU(),
+                nn.Linear(self.h, self.h), nn.LayerNorm(self.h), nn.GELU(),
                 nn.Linear(self.h, out_dim)
             )
 
@@ -55,14 +55,16 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         blind_id = obs["blind_index"].long().view(-1)
         blind_identity = self.blind_emb(blind_id)
 
-        g_tok = (self.goal_proj(obs["goal"] / 10000.0) + blind_identity).unsqueeze(1)
-        s_tok = self.state_proj(torch.cat([obs["hands_left"], obs["discards_left"]], dim=1)).unsqueeze(1)
+        g_tok = (self.goal_proj(torch.cat([obs["chips"] / 100000.0, torch.log10(obs["chips"] + 1) / 10.0, obs["chips_average"] / 100000.0, torch.log10(obs["chips_average"] + 1) / 10.0], dim=1)) + blind_identity).unsqueeze(1)
+        s_tok = self.state_proj(torch.cat([obs["hands_left"] / 10.0, obs["discards_left"] / 10.0], dim=1)).unsqueeze(1)
         
         levels = torch.stack([
-            obs["hand_stats"]["level"], 
-            obs["hand_stats"]["played_count"],
-            obs["hand_stats"]["chips"] / 100.0, 
-            obs["hand_stats"]["mult"] / 10.0,
+            obs["hand_stats"]["level"] / 10.0, 
+            obs["hand_stats"]["played_count"] / 100.0,
+            obs["hand_stats"]["chips"] / 1000.0, 
+            torch.log10(obs["hand_stats"]["chips"] + 1.0) / 3.0,
+            obs["hand_stats"]["mult"] / 100.0,
+            torch.log10(obs["hand_stats"]["mult"] + 1.0) / 2.0,
             obs["hand_stats"]["played_this_blind"],
         ], dim=-1)
         l_toks = self.levels_proj(levels)
@@ -80,7 +82,16 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         self._cached_seq_63 = torch.cat([g_tok, s_tok, l_toks, d_tok, j_tok, h_tok, stop_tok], dim=1) + self.pos_emb
         
         dummy_mask = torch.zeros(B, 31, 1, device=device)
-        initial_feat = self.transformer(torch.cat([self._cached_seq_63, dummy_mask], dim=2))
+        x = torch.cat([self._cached_seq_63, dummy_mask], dim=2)
+        
+        def run_transformer(input_tensor):
+            return self.transformer(input_tensor)
+
+        if x.requires_grad:
+            initial_feat = checkpoint(run_transformer, x, use_reentrant=False)
+        else:
+            initial_feat = self.transformer(x)
+        
         self._val_out = self.value_head(initial_feat[:, 0, :]).squeeze(-1)
         
         return torch.zeros(B, 1, device=device), []

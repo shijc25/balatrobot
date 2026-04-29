@@ -66,7 +66,7 @@ class Card(BaseCard):
 
     def get_scalar_properties(self):
         p = np.zeros(4, dtype=np.float32)
-        p[0] = (self.cost - 4) / 10
+        p[0] = self.cost
         p[1] = self.chip_value()
         return p
 

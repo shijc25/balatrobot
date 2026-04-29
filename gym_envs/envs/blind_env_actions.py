@@ -58,13 +58,12 @@ class BlindActionHelper:
 
     @staticmethod
     def build_action_space(
-        hand_size: int, action_mode: str = "combo_index", num_experts: int = 0
+        hand_size: int, action_mode: str, num_experts: int = 0
     ) -> sp.Space:
         if action_mode == "ar_custom_dist":
             return sp.MultiDiscrete([2, 11, 11, 11, 11, 11])
         raise ValueError(
-            f"Unknown action mode: {action_mode}. Supported modes are 'combo_index',"
-            " 'multi_binary', and 'stacked_binary_masks'."
+            f"Unknown action mode: {action_mode}."
         )
 
     def action_vector_to_action(

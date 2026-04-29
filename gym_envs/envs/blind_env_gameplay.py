@@ -39,7 +39,7 @@ class BlindGameplayHelper:
         return getattr(self._env, name)
 
     def determine_play_hand_outcome(self, played_hand):
-        game_over = self.hands_left == 0
+        game_over = self.hands_left <= 0
         no_op_result = {
             "reward": 0,
             "game_over": game_over,
@@ -47,6 +47,7 @@ class BlindGameplayHelper:
             "scored_cards": played_hand,
             "hand_score": 0,
         }
+        reward = 0.0
         if self.G.current_blind.name == "The Psychic":
             if len(played_hand) < 5:
                 return no_op_result
@@ -61,6 +62,7 @@ class BlindGameplayHelper:
                     discard_cards = self.G.hand.pop_cards(discard_indices)
 
                 effects = joker_discard_effects(self.G.owned_jokers, discard_cards)
+                reward += effects["synergy"] * 0.0005
                 self.handle_callbacks(effects["callbacks"])
 
         disabled_joker = None
@@ -101,7 +103,6 @@ class BlindGameplayHelper:
         if any([j.name == "Space Joker" for j in self.G.owned_jokers]) and random() < 0.25:
             self.G.hand_stats[hand_type].add_level(1)
 
-        reward = 0.0
         chips, mult = self.G.hand_stats[hand_type].scores()
         if self.G.current_blind.name == "The Flint":
             chips = max(int(chips / 2), 1)
@@ -163,6 +164,7 @@ class BlindGameplayHelper:
                 mult *= 1.5
 
             effects = joker_card_score_effects(self.G.owned_jokers, card, self.G)
+            reward += effects["synergy"] * 0.0005
             aggregate_joker_effects["chips"] += effects["chips"]
             aggregate_joker_effects["mult"] += effects["mult"]
             aggregate_joker_effects["mult_mult"] *= effects["mult_mult"]
@@ -196,6 +198,7 @@ class BlindGameplayHelper:
             self.G.dollars,
             self.G,
         )
+        reward += effects["synergy"] * 0.0005
         self.handle_callbacks(effects["callbacks"])
         chips += effects["chips"]
         mult += effects["mult"]
@@ -211,13 +214,16 @@ class BlindGameplayHelper:
         if self.objective_mode == "blind_grind":
             safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
             safe_score = np.clip(safe_score, 0.0, 1e18)
-            reward = np.log10(safe_score + 1) * 0.01
+            reward += np.log10(safe_score + 1) * 0.001
+            
+        if hand_type in ["Flush", "Straight Flush"]:
+            flush_bonus = max(0.0, 1.0 - (self.round - 1) / 4.0)
+            reward += flush_bonus * 0.0005
         
         suit_counts = [0, 0, 0, 0]
         for card in played_hand.cards:
             suit_counts[card.suit_index()] += 1
 
-        game_over = self.hands_left == 0
         result = {
             "reward": reward,
             "game_over": game_over,
@@ -335,11 +341,14 @@ class BlindGameplayHelper:
         result["imagined_hand"] = imagined_hand
         return result
 
-    def fresh_blind(self, fake_reset: bool = False):
+    def fresh_blind(self, external_blind = None, fake_reset: bool = False):
         self.G.deck.reset()
         self.G.hand = Hand([])
         if not fake_reset:
-            self.G.current_blind = self.next_blind
+            if external_blind is not None:
+                self.G.current_blind = external_blind
+            else:
+                self.G.current_blind = self.next_blind
             self.next_blind = Blind.random(self.round + 1)
 
         if any(j.name == "Chicot" for j in self.G.owned_jokers):

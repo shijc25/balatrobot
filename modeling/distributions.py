@@ -8,6 +8,7 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
         super().__init__(inputs, model)
         self.model = model
         self._cached_entropy = None
+        self._last_actions = None
         
     @staticmethod
     def required_model_output_shape(action_space, model_config):
@@ -79,6 +80,8 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
             return self.last_sample
 
     def logp(self, actions):
+        self._last_actions = actions
+        
         B = actions.shape[0]
         device = actions.device
         hand_mask = torch.zeros(B, 10, device=device)
@@ -121,6 +124,49 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
         
         self._cached_entropy = total_entropy
         return total_logp
+    
+    def kl(self, other):
+        actions = other._last_actions
+        if actions is None:
+            return torch.tensor(0.0, device=self.inputs.device)
+
+        B = actions.shape[0]
+        device = actions.device
+        hand_mask = torch.zeros(B, 10, device=device)
+        total_kl = torch.zeros(B, device=device)
+        stopped = torch.zeros(B, dtype=torch.bool, device=device)
+        
+        true_mode = actions[:, 0]
+
+        for i in range(6):
+            if stopped.all() and i > 0: break
+            
+            current_mode = None if i == 0 else true_mode
+            mode_logits_old, card_logits_old = self.model.ar_step(hand_mask, step_idx=i, selected_mode=current_mode)
+            mode_logits_new, card_logits_new = other.model.ar_step(hand_mask, step_idx=i, selected_mode=current_mode)
+            
+            if i == 0:
+                d_old = Categorical(logits=mode_logits_old)
+                d_new = Categorical(logits=mode_logits_new)
+                total_kl += torch.distributions.kl.kl_divergence(d_old, d_new)
+                continue
+                
+            d_old = Categorical(logits=card_logits_old)
+            d_new = Categorical(logits=card_logits_new)
+            
+            step_kl = torch.distributions.kl.kl_divergence(d_old, d_new)
+            total_kl += torch.where(stopped, torch.zeros_like(step_kl), step_kl)
+            
+            card_act = actions[:, i]
+            is_stop = card_act == 10
+            stopped = stopped | is_stop
+            is_card = (card_act < 10) & (~stopped)
+            if is_card.any():
+                batch_idx = torch.where(is_card)[0]
+                selected_card = card_act[is_card]
+                hand_mask[batch_idx, selected_card] = 1.0
+        
+        return total_kl
 
     def entropy(self):
         if self._cached_entropy is not None:

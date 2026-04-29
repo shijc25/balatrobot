@@ -82,8 +82,8 @@ class BlindObservationHelper:
         if self.deck_obs:
             space["deck_indices"] = deck_indices
 
-        discards_left = sp.Box(low=0, high=10, shape=(1,), dtype=np.float32)
-        hands_left = sp.Box(low=0, high=20, shape=(1,), dtype=np.float32)
+        discards_left = sp.Box(low=-10, high=10, shape=(1,), dtype=np.float32)
+        hands_left = sp.Box(low=-20, high=20, shape=(1,), dtype=np.float32)
         target_hand_types = sp.Discrete(9)
 
         if self.cannot_discard_obs:
@@ -102,9 +102,9 @@ class BlindObservationHelper:
 
         if self.objective_mode == "blind_grind":
             space["round"] = sp.Box(low=-15, high=40, shape=(1,), dtype=np.float32)
-            space["chip_goals"] = sp.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
-            space["goal_progress"] = sp.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
             space["goal"] = sp.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
+            space["chips"] = sp.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
+            space["chips_average"] = sp.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
 
         if self.blind_obs:
             space["blind_index"] = sp.Box(low=0, high=30, shape=(1,), dtype=np.float32)
@@ -130,7 +130,6 @@ class BlindObservationHelper:
             space["scoring_cards_masks"] = sp.Box(
                 low=0, high=1, shape=(num_subsets, 8), dtype=np.float32
             )
-        space["dollars"] = sp.Box(low=-20, high=20, shape=(1,), dtype=np.float32)
 
         return sp.Dict(space)
 
@@ -224,28 +223,17 @@ class BlindObservationHelper:
 
         if self.objective_mode == "blind_grind":
 
-            def chip_norms(chips):
-                lin = (chips / 50000) - 1
-                return [
-                    np.log(max(chips, 1) / 300) - 3,
-                    (chips / 300) ** (1 / 2) - 3,
-                    lin,
-                    np.sin(lin * np.pi / 2) * 2,
-                    np.cos(lin * np.pi / 2) * 2,
-                ]
-
-            obs["chip_goals"] = np.array(chip_norms(self.chip_goal), dtype=np.float32)
             obs["round"] = np.array([self.round], dtype=np.float32)
             obs["goal"] = np.array([self.chip_goal], dtype=np.float32)
 
             remaining_chips = self.chip_goal - self.chips
             remaining_chips = max(remaining_chips, 0)
-
-            obs["goal_progress"] = np.array(
-                [np.clip(remaining_chips / self.chip_goal, 0, 1)]
-                + chip_norms(remaining_chips),
-                dtype=np.float32,
-            )
+            
+            obs["chips"] = np.array([remaining_chips], dtype=np.float32)
+            if self.hands_left > 0:
+                obs["chips_average"] = np.array([remaining_chips / self.hands_left], dtype=np.float32)
+            else:
+                obs["chips_average"] = np.array([self.chip_goal], dtype=np.float32)
 
         if self.blind_obs:
             obs["blind_index"] = np.array(
@@ -272,10 +260,6 @@ class BlindObservationHelper:
             obs["scoring_cards_masks"] = np.stack(scoring_masks, axis=0).astype(
                 np.float32
             )
-
-        scaled_dollars = (self.G.dollars - 100) / 10.0
-        scaled_dollars = np.clip(scaled_dollars, -20, 20)
-        obs["dollars"] = np.array([scaled_dollars], dtype=np.float32)
 
         if reset_hand:
             self.last_hand_played = np.zeros(9, dtype=np.float32)

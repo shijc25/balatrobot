@@ -1,1 +1,1 @@
-python rl_train.py --config configs/blind_shop.toml --set run.restore="/root/balatrobot/run_data/blind_shop/blind_shop_ed571_00000_0_2026-04-18_18-04-02/checkpoint_000001"
+python rl_train.py --config configs/blind_shop.toml --set run.restore="/root/autodl-tmp/run_data/blind_shop/blind_shop_5b0a4_00000_0_2026-04-26_20-42-16/checkpoint_000063"

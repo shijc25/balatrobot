@@ -220,7 +220,7 @@ class BlindEnv(gym.Env):
 
     def step(self, action):
         action = self.action_vector_to_action(action)
-
+    
         illegal_reasons = self.check_illegal_actions(action)
         if len(illegal_reasons) > 0:
             print("YOU CAN'T DO THAT")
@@ -231,6 +231,10 @@ class BlindEnv(gym.Env):
         if len(played_hand) == 0:
             print("YOU CAN'T PLAY AN EMPTY HAND")
             return (self.get_obs(), 0, True, False, {})
+        
+        if self.hands_left <= 0:
+            print("ERROR: Tried to play with <=0 hands left.")
+            return (self.get_obs(reset_hand=True), 0, True, False, {})
 
         if action[0] == Actions.DISCARD_HAND:
             self.discards_played += 1
@@ -240,6 +244,7 @@ class BlindEnv(gym.Env):
             reward = 0.0
 
             effects = joker_discard_effects(self.G.owned_jokers, played_hand)
+            reward += effects["synergy"] * 0.0005
             self.handle_callbacks(effects["callbacks"])
 
             self.draw_cards()
@@ -292,7 +297,7 @@ class BlindEnv(gym.Env):
                         ]
                     
                     play_result["reward"] += (
-                        1.0 + self.hands_left * 0.1
+                        0.1 + self.hands_left * 0.01
                     )
                     effects = joker_round_win_effects(self.G)
                     self.handle_callbacks(effects["callbacks"])

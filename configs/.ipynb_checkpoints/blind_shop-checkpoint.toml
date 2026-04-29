@@ -53,12 +53,12 @@ ignore_rarity = false
 action_method = "autoregressive"
 
 [ppo_overrides.blind_shop.env_runners]
-num_env_runners = 20
+num_env_runners = 18
 num_envs_per_env_runner = 20
-sample_timeout_s = 360
+sample_timeout_s = 180
 
 [ppo_overrides.blind_shop.training]
-train_batch_size = 262144
+train_batch_size = 65536
 sgd_minibatch_size = 1024
-num_sgd_iter = 1
-lr = 0.0005
+num_sgd_iter = 3
+lr = 0.00003

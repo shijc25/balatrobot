@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
+from torch.utils.checkpoint import checkpoint
 
 class BalatroShopModel(TorchModelV2, nn.Module):
     def __init__(self, obs_space, action_space, num_outputs, model_config, name, **kwargs):
@@ -8,14 +9,14 @@ class BalatroShopModel(TorchModelV2, nn.Module):
         nn.Module.__init__(self)
 
         self.dim = 64
-        self.h = 128
+        self.h = 256
         self.num_tokens = 30
         from gym_envs.universal_card_encoder import UniversalCardEncoder
         self.card_encoder = UniversalCardEncoder()
         
         self.skip_token = nn.Parameter(torch.randn(1, 1, 63))
         self.money_proj = nn.Linear(1, 63); self.reroll_proj = nn.Linear(1, 63)
-        self.goal_proj = nn.Linear(1, 63); self.levels_proj = nn.Linear(4, 63)
+        self.goal_proj = nn.Linear(6, 63); self.levels_proj = nn.Linear(6, 63)
         
         self.pos_emb = nn.Parameter(torch.randn(1, self.num_tokens, 63) * 0.02)
         self.blind_emb = nn.Embedding(32, 63)
@@ -25,14 +26,15 @@ class BalatroShopModel(TorchModelV2, nn.Module):
         self.pack_bias = nn.Parameter(torch.randn(1, 1, 63) * 0.02)
         
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=self.dim, nhead=4, dim_feedforward=self.h, activation="gelu", batch_first=True,
+            d_model=self.dim, nhead=8, dim_feedforward=self.h, activation="gelu", batch_first=True,
             dropout=0.0, norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=4)
         
         def make_head(out_dim):
             return nn.Sequential(
                 nn.Linear(self.dim, self.h), nn.LayerNorm(self.h), nn.GELU(),
+                nn.Linear(self.h, self.h), nn.LayerNorm(self.h), nn.GELU(),
                 nn.Linear(self.h, out_dim)
             )
         
@@ -48,11 +50,11 @@ class BalatroShopModel(TorchModelV2, nn.Module):
         device = obs["dollars"].device
         
         sk_tok = self.skip_token.expand(B, -1, -1)
-        m_tok = self.money_proj(obs["dollars"] / 10.0).unsqueeze(1)
-        r_tok = self.reroll_proj(obs["reroll_price"] / 10.0).unsqueeze(1)
+        m_tok = self.money_proj(obs["dollars"] / 100.0).unsqueeze(1)
+        r_tok = self.reroll_proj(obs["reroll_price"] / 100.0).unsqueeze(1)
         blind_id = obs["blind_index"].long().view(-1)
-        g_tok = (self.goal_proj(obs["goal"] / 10000.0) + self.blind_emb(blind_id)).unsqueeze(1)
-        lvls = torch.stack([obs["hand_stats"]["level"], obs["hand_stats"]["played_count"], obs["hand_stats"]["chips"] / 100.0, obs["hand_stats"]["mult"] / 10.0], dim=-1)
+        g_tok = (self.goal_proj(torch.cat([obs["goal"] / 100000.0, torch.log10(obs["goal"] + 1) / 10.0, obs["round"] / 100.0, (25 - obs["round"]) / 100.0, obs["owned_joker_count"] / 10.0, (5 - obs["owned_joker_count"]) / 10.0], dim=1)) + self.blind_emb(blind_id)).unsqueeze(1)
+        lvls = torch.stack([obs["hand_stats"]["level"] / 10.0, obs["hand_stats"]["played_count"] / 100.0, obs["hand_stats"]["chips"] / 1000.0, torch.log10(obs["hand_stats"]["chips"] + 1.0) / 3.0, obs["hand_stats"]["mult"] / 100.0, torch.log10(obs["hand_stats"]["mult"] + 1.0) / 2.0], dim=-1)
         l_toks = self.levels_proj(lvls)
         s_toks, _ = self.card_encoder(obs["shop_cards"])
         b_toks, _ = self.card_encoder(obs["booster_cards"])
@@ -67,7 +69,13 @@ class BalatroShopModel(TorchModelV2, nn.Module):
         seq_63 = torch.cat([sk_tok, m_tok, r_tok, g_tok, l_toks, s_toks, b_toks, o_toks, p_toks], dim=1)
         seq_64 = torch.cat([seq_63 + self.pos_emb, torch.zeros(B, self.num_tokens, 1, device=device)], dim=2)
         
-        features = self.transformer(seq_64)
+        def run_transformer(input_tensor):
+            return self.transformer(input_tensor)
+
+        if seq_64.requires_grad:
+            features = checkpoint(run_transformer, seq_64, use_reentrant=False)
+        else:
+            features = self.transformer(seq_64)
         
         goal_feat = features[:, 3, :]
         self._val_out = self.value_head(goal_feat).squeeze(-1)

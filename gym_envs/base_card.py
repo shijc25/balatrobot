@@ -198,7 +198,7 @@ class BaseCard:
 
     def get_scalar_properties(self):
         return np.array(
-            [(self.value - 4) / 10.0, 0, 0, 0],
+            [self.value, 0, 0, 0],
             dtype=np.float32,
         )
 

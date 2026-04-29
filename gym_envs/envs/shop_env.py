@@ -45,7 +45,6 @@ class ShopEnv(gym.Env):
         self.max_boosters = 2
         self.max_booster_contents = 5
         self.G.deck = Deck()
-        self.first_shop = True
         self.G.max_hand_size = env_config.get("max_hand_size", 15)
         self.max_hand_size = self.G.max_hand_size
         self.allow_joker_selling_before_cap = env_config.get(
@@ -64,79 +63,6 @@ class ShopEnv(gym.Env):
         
         self.in_pack_selection = False
         self.num_booster_contents = 5
-
-    def get_card_list(self):
-        special_cards = [
-            BaseCard(
-                u_index=BaseCard.SpecialTokens.SHOP_CONTEXT
-                + BaseCard.FIRST_SPECIAL_TOKEN_INDEX,
-                scalar_properties=[0, 0, 0, 0],
-            ),
-            BaseCard(
-                u_index=BaseCard.SpecialTokens.END_SHOP
-                + BaseCard.FIRST_SPECIAL_TOKEN_INDEX,
-                scalar_properties=[0, 0, 0, 0],
-            ),
-            BaseCard(
-                u_index=BaseCard.SpecialTokens.REROLL_SHOP
-                + BaseCard.FIRST_SPECIAL_TOKEN_INDEX,
-                scalar_properties=[
-                    (self.reroll_cost - 4)
-                    / 10.0,  # Reroll cost following the joker scaling logic
-                    0,
-                    0,
-                    0,
-                ],
-            ),
-            BaseCard(
-                u_index=BaseCard.SpecialTokens.END_BOOSTER
-                + BaseCard.FIRST_SPECIAL_TOKEN_INDEX,
-                scalar_properties=[0, 0, 0, 0],
-            ),
-        ]
-        for x in special_cards:
-            x.segment = BaseCard.Segments.SPECIAL_TOKEN
-
-        shop_cards = self.shop_jokers + [BaseCard()] * (
-            self.shop_cards - len(self.shop_jokers)
-        )
-        owned_jokers = self.G.owned_jokers + [BaseCard()] * (
-            self.G.joker_limit - len(self.G.owned_jokers)
-        )
-        boosters = self.boosters + [BaseCard()] * (
-            self.max_boosters - len(self.boosters)
-        )
-        booster_contents = self.booster_contents + [BaseCard()] * (
-            self.max_booster_contents - len(self.booster_contents)
-        )
-        hand = self.G.hand.cards + [BaseCard()] * (
-            self.G.max_hand_size - len(self.G.hand.cards)
-        )
-        hand = hand[
-            : self.G.max_hand_size
-        ]  # Ensure we don't exceed max hand size e.g. in spectral packs
-
-        all_cards = (
-            special_cards
-            + shop_cards
-            + owned_jokers
-            + boosters
-            + booster_contents
-            + hand
-        )
-        return all_cards
-
-    def round_info(self):
-        chips_estimate = Blind.estimate_chips_for_round(self.round)
-        lin = (chips_estimate / 50000) - 1
-        return [
-            self.round / 10 - 1,
-            (chips_estimate / 300) ** 0.5 - 3,
-            np.log(chips_estimate + 1) - 3,
-            lin,
-            np.sin(lin * np.pi / 2) * 2,
-            np.cos(lin * np.pi / 2) * 2,
-        ]
 
     def get_obs(self):
         self.enforce_segments()
@@ -197,12 +123,12 @@ class ShopEnv(gym.Env):
             deck_seals[card.seal] += 1
         deck_stats = np.concatenate(
             [
-                (deck_ranks - 4) / 4,
-                (deck_suits - 13) / 13,
-                (deck_enhancements - 2) / 10,
-                (deck_editions - 2) / 10,
-                (deck_seals - 2) / 10,
-                (deck_size - 52) / 10,
+                deck_ranks,
+                deck_suits,
+                deck_enhancements,
+                deck_editions,
+                deck_seals,
+                deck_size,
             ]
         )
 
@@ -216,9 +142,7 @@ class ShopEnv(gym.Env):
                 [np.clip(self.G.dollars, self.min_dollars, self.max_dollars)],
                 dtype=np.float32,
             ),
-            "round_info": np.array(self.round_info(), dtype=np.float32),
             "deck_stats": deck_stats,
-            "blind_index": np.array([self.next_blind.index], dtype=np.int32),
             "owned_joker_count": np.array([len(self.G.owned_jokers)], dtype=np.float32),
             
             "reroll_price": np.array([self.reroll_cost], dtype=np.float32),
@@ -245,11 +169,10 @@ class ShopEnv(gym.Env):
             "pack_card_level_indices": pack_card_level_indices,
             
             "blind_index": np.array([self.next_blind.index], dtype=np.int32),
+            "round": np.array([self.round], dtype=np.int32),
         }
 
     def build_observation_space(self):
-        self.card_list_size = len(self.get_card_list())
-        
         bool_space_2 = sp.Box(0, 1, (2,), dtype=np.int8)
         bool_space_5 = sp.Box(0, 1, (5,), dtype=np.int8)
         bool_space_1 = sp.Box(0, 1, (1,), dtype=np.int8)
@@ -263,10 +186,8 @@ class ShopEnv(gym.Env):
                 "owned_joker_count": sp.Box(0, 20, shape=(1,), dtype=np.float32),
                 "goal": sp.Box(0, 1e18, shape=(1,), dtype=np.float32),
                 
-                "round_info": sp.Box(low=-20, high=200.0, shape=(6,), dtype=np.float32),
-                "blind_index": sp.Box(low=0, high=30, shape=(1,), dtype=np.int32),
                 "hand_stats": HandType.stats_obs_space(),
-                "deck_stats": sp.Box(low=-20, high=20, shape=(37,), dtype=np.float32),
+                "deck_stats": sp.Box(low=-200, high=200, shape=(37,), dtype=np.float32),
                 
                 "is_joker_on_shelf": bool_space_2,
                 "is_planet_on_shelf": bool_space_2,
@@ -287,6 +208,7 @@ class ShopEnv(gym.Env):
                 "pack_cards": BaseCard.observation_space(5),
                 
                 "blind_index": sp.Box(0, 30, shape=(1,), dtype=np.int32),
+                "round": sp.Box(0, 30, shape=(1,), dtype=np.int32),
             }
         )
 
@@ -386,8 +308,7 @@ class ShopEnv(gym.Env):
     def roll_boosters(self):
         self.boosters = []
         # Generate a random booster and ensure it is unique
-        if self.first_shop:
-            self.first_shop = False
+        if self.round == 2:
             self.boosters.append(Booster("Buffoon", "Normal", 1.2))
         while len(self.boosters) < self.max_boosters:
             self.boosters.append(Booster.random())
@@ -409,7 +330,6 @@ class ShopEnv(gym.Env):
             self.reroll_cost = 0
 
     def reset(self, seed=None, options=None):
-        self.first_shop = True
         self.G = SharedGamestate()
         self.G.max_hand_size = self.max_hand_size
         self.new_shop()
@@ -457,7 +377,7 @@ class ShopEnv(gym.Env):
             print(f"DEBUG: Model picked ILLEGAL {action}.")
             action = [Actions.END_SHOP]
         else:
-            reward = 0.01 if action[0] != Actions.END_SHOP and action[0] != Actions.SELL_JOKER else 0.0
+            reward = 0.005 if action[0] != Actions.END_SHOP else 0.0
         
         self.take_action(action)
         

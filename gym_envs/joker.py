@@ -47,10 +47,10 @@ class Joker(BaseCard):
     def get_scalar_properties(self):
         return np.array(
             [
-                (self.value - 4) / 10.0,
-                self.state.get("chips", 0) / 100.0,
-                self.state.get("mult", 0) / 10.0,
-                self.state.get("mult_mult", 0) / 2.0,
+                self.value,
+                self.state.get("chips", 0),
+                self.state.get("mult", 0),
+                self.state.get("mult_mult", 0),
             ],
             dtype=np.float32,
         )

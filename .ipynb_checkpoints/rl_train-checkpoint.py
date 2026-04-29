@@ -425,11 +425,9 @@ def blind_shop_config(
             blind_env.action_space,
             {
                 "model": blind_model_config,
-                "kl_target": 0.01,
-                "kl_coeff": 0.2,
-                "entropy_coeff": 0.001,
-                "lr": 3e-4,
-                "lr_schedule": [[0, 3e-4], [2e8, 1e-4]],
+                "kl_coeff": 0.0,
+                "entropy_coeff": 0.0001,
+                "lr": 3e-5,
                 "explore": not remote_env,
                 "lambda_": 0.99,
             },
@@ -440,11 +438,9 @@ def blind_shop_config(
             shop_env.action_space,
             {
                 "model": shop_model_config,
-                "kl_target": 0.01,
-                "kl_coeff": 0.2,
-                "entropy_coeff": 0.003,
-                "lr": 3e-4,
-                "lr_schedule": [[0, 3e-4], [5e7, 1e-4], [2e8, 3e-5]],
+                "kl_coeff": 0.0,
+                "entropy_coeff": 0.001,
+                "lr": 3e-5,
                 "explore": not remote_env,
                 "lambda_": 0.95,
             },
@@ -468,9 +464,8 @@ def blind_shop_config(
             num_envs_per_env_runner=6 if not remote_env and not smoke else 1,
             explore=not remote_env,
             sample_timeout_s=60,
-            batch_mode="truncate_episodes",
-            rollout_fragment_length=100,
-            compress_observations=False,
+            rollout_fragment_length="auto",
+            batch_mode="complete_episodes",
         )
         .multi_agent(
             policies=POLICIES,
@@ -483,8 +478,9 @@ def blind_shop_config(
             num_sgd_iter=3,
             lr=1e-4,
             grad_clip=3.0,
-            clip_param=0.3,
+            clip_param=0.2,
             vf_clip_param=10.0,
+            entropy_coeff=0.001,
             gamma=0.99,
             vf_loss_coeff=0.05,
             optimizer={
@@ -504,7 +500,7 @@ def blind_shop_config(
 
     if not remote_env and not smoke:
         config = config.evaluation(
-            evaluation_num_env_runners=3,
+            evaluation_num_env_runners=5,
             evaluation_interval=1,
             evaluation_config={"explore": False, "env_config": eval_env_config},
             evaluation_parallel_to_training=True,
@@ -539,9 +535,7 @@ def run_training(
 
     ray_cfg = deep_merge(DEFAULT_RAY_CONFIG, config_data.get("ray", {}))
     ray_cfg.setdefault("ignore_reinit_error", True)
-    ray.init(
-    object_store_memory=40 * 1024 * 1024 * 1024,
-    **ray_cfg)
+    ray.init(**ray_cfg)
 
     analysis = None
     try:

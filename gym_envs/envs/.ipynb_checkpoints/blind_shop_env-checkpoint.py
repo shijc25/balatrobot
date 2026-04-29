@@ -46,6 +46,8 @@ class BlindShopEnv(MultiAgentEnv):
         self.shop_steps = ["select_shop_action", "select_booster_action"]
 
         self.reward_stats = defaultdict(lambda: [0.0, 1.0, 0.0])
+        self.alpha = 0.003
+        self.eps = 1e-8
 
         assert self.start_phase in (
             "blind",
@@ -395,7 +397,7 @@ class BlindShopEnv(MultiAgentEnv):
         won_run = self.shop_env.round == 25
         
         if(won_run):
-            reward += 1.0
+            reward += 2.0
         
         return self.shop_env.get_obs(), reward, self.held_shop_info
 
