@@ -9,6 +9,7 @@ class PlanetCard(Consumable):
         super().__init__(name, num_targets=0, segment=segment)
         self.hand_type = hand_type
         self.universal_index = BaseCard.FIRST_PLANET_INDEX + i
+        self.value = 3
 
     @staticmethod
     def from_gamestate_card(gamestate_card):

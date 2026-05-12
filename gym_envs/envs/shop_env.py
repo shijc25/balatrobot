@@ -29,7 +29,7 @@ class ShopEnv(gym.Env):
         self.hand_to_id = env_config.get("hand_to_id", {})
         
         self.illegal_action_reward = env_config.get("illegal_action_reward", 0)
-        self.starting_dollars = env_config.get("starting_dollars", 5.0)
+        self.starting_dollars = env_config.get("starting_dollars", 4.0)
 
         self.G = SharedGamestate()
         self.G.dollars = 0
@@ -95,7 +95,7 @@ class ShopEnv(gym.Env):
         if self.in_pack_selection and hasattr(self, 'current_opened_pack_name'):
             current_pack_is_buffoon = (self.current_opened_pack_name == "Buffoon")
             current_pack_is_celestial = (self.current_opened_pack_name == "Celestial")
-            
+        
         pack_card_is_joker = np.zeros(5, dtype=np.bool_)
         pack_card_is_planet = np.zeros(5, dtype=np.bool_)
         pack_card_level_indices = np.full((5,), -1, dtype=np.int32)
@@ -106,7 +106,7 @@ class ShopEnv(gym.Env):
             elif isinstance(card, PlanetCard):
                 pack_card_is_planet[i] = True
                 pack_card_level_indices[i] = self.hand_to_id.get(card.hand_type, -1)
-                
+        
         pack_cards_obs = BaseCard.observe_list(self.booster_contents, 5)
         
         deck_size = np.array([len(self.G.deck.all_cards)], dtype=np.float32)
@@ -131,12 +131,12 @@ class ShopEnv(gym.Env):
                 deck_size,
             ]
         )
-
+        
         target_counts = np.zeros(self.max_booster_contents, dtype=np.int32)
         for i in range(len(self.booster_contents)):
             if isinstance(self.booster_contents[i], Consumable):
                 target_counts[i] = self.booster_contents[i].num_targets
-
+        
         return {
             "dollars": np.array(
                 [np.clip(self.G.dollars, self.min_dollars, self.max_dollars)],
@@ -377,7 +377,7 @@ class ShopEnv(gym.Env):
             print(f"DEBUG: Model picked ILLEGAL {action}.")
             action = [Actions.END_SHOP]
         else:
-            reward = 0.005 if action[0] != Actions.END_SHOP else 0.0
+            reward = 0.0
         
         self.take_action(action)
         
@@ -420,7 +420,7 @@ class ShopEnv(gym.Env):
             if self.reroll_cost == 0:
                 self.reroll_cost = 5  # Reset to default cost after free reroll
             else:
-                self.reroll_cost += 2
+                self.reroll_cost += 1
             self.roll_jokers()
             self.reroll_count += 1
             for j in self.G.owned_jokers:
@@ -511,7 +511,7 @@ class ShopEnv(gym.Env):
             for card in shop_data.get("pack_cards", [])
         ]
         self.G.deck = Deck.from_gamestate_deck(gamestate.get("deck", []))
-        self.hand = Hand.from_gamestate_hand(gamestate.get("hand", []))
+        self.G.hand = Hand.from_gamestate_hand(gamestate.get("hand", []))
         self.enforce_segments()
 
     def enforce_segments(self):

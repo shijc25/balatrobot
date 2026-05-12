@@ -62,7 +62,7 @@ class BlindGameplayHelper:
                     discard_cards = self.G.hand.pop_cards(discard_indices)
 
                 effects = joker_discard_effects(self.G.owned_jokers, discard_cards)
-                reward += effects["synergy"] * 0.0005
+                # reward += effects["synergy"] * 0.001
                 self.handle_callbacks(effects["callbacks"])
 
         disabled_joker = None
@@ -164,7 +164,7 @@ class BlindGameplayHelper:
                 mult *= 1.5
 
             effects = joker_card_score_effects(self.G.owned_jokers, card, self.G)
-            reward += effects["synergy"] * 0.0005
+            # reward += effects["synergy"] * 0.001
             aggregate_joker_effects["chips"] += effects["chips"]
             aggregate_joker_effects["mult"] += effects["mult"]
             aggregate_joker_effects["mult_mult"] *= effects["mult_mult"]
@@ -198,7 +198,7 @@ class BlindGameplayHelper:
             self.G.dollars,
             self.G,
         )
-        reward += effects["synergy"] * 0.0005
+        # reward += effects["synergy"] * 0.001
         self.handle_callbacks(effects["callbacks"])
         chips += effects["chips"]
         mult += effects["mult"]
@@ -215,10 +215,24 @@ class BlindGameplayHelper:
             safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
             safe_score = np.clip(safe_score, 0.0, 1e18)
             reward += np.log10(safe_score + 1) * 0.001
-            
-        if hand_type in ["Flush", "Straight Flush"]:
-            flush_bonus = max(0.0, 1.0 - (self.round - 1) / 4.0)
-            reward += flush_bonus * 0.0005
+        
+        # Flush Wheel
+        # if hand_type in ["Flush", "Straight Flush"]:
+        #    reward += 0.002 * max(0, 3 - self.round)
+        
+        # Blackboard Wheel
+        # for joker in self.G.owned_jokers:
+        #    if joker.name == "Blackboard":
+        #        for card in played_hand:
+        #            if card.suit in ["Hearts", "Diamonds"]:
+        #                reward += 0.002
+        
+        # Seeing double Wheel
+        # for joker in self.G.owned_jokers:
+        #    if joker.name == "Seeing Double":
+        #        for card in scored_cards:
+        #            if card.suit in ["Clubs"]:
+        #                reward += 0.002
         
         suit_counts = [0, 0, 0, 0]
         for card in played_hand.cards:
@@ -364,23 +378,13 @@ class BlindGameplayHelper:
         if not self.expert_pretraining:
             self.active_expert = None
 
-        if self.round == 1 and random() < self.missed_wins_p and len(self.missed_wins) > 0:
-            i = randint(0, len(self.missed_wins) - 1)
-            self.G.hand = deepcopy(self.missed_wins[i])
-            if random() < self.missed_wins_decay_p:
-                print(f"Missed wins before pop: {len(self.missed_wins)}")
-                self.missed_wins.pop(i)
-        else:
-            self.draw_cards()
+        self.unique_hand_types_this_blind = set()
+        self.draw_cards()
         self.chips = 0
         self.reset_hand_watermarks()
 
-        if type(self.max_plays) == dict:
-            self.hands_left = self.max_plays[self.target_hand_type]
-            self.discards_left = self.max_discards[self.target_hand_type]
-        else:
-            self.hands_left = self.max_plays
-            self.discards_left = self.max_discards
+        self.hands_left = self.max_plays
+        self.discards_left = self.max_discards
 
         if self.G.current_blind.name == "The Water":
             self.discards_left = 0
@@ -395,6 +399,7 @@ class BlindGameplayHelper:
                 self.G.owned_jokers, self.G.hand, self.hands_left, self.discards_left
             )
             self.hands_left = effects["hands_left"]
+            self.hands_left = max(self.hands_left, 1)
             self.discards_left = effects["discards_left"]
             self.handle_callbacks(effects["callbacks"])
         if self.stake >= 4:
@@ -426,60 +431,8 @@ class BlindGameplayHelper:
 
         self.G.dollars -= sum([j.value for j in self.G.owned_jokers])
         self.G.dollars = max(self.G.dollars, 0)
-
-        favorite = choice(self.hands)
-        associated_hand_types = {
-            "Flush": ["Straight Flush"],
-            "Straight": ["Straight Flush"],
-            "Straight Flush": ["Flush", "Straight"],
-            "Full House": ["Two Pair", "Three of a Kind"],
-            "Two Pair": ["Full House", "Three of a Kind", "Pair"],
-        }.get(favorite, [])
-        main_level = randint(self.round - 5, self.round + 3)
-        main_level = max(main_level, 1)
-        self.G.hand_stats[favorite].set_level(main_level)
-        self.G.hand_stats[favorite].play_count = self.round * 2
-        for hand_type in associated_hand_types:
-            if hand_type in self.G.hand_stats:
-                self.G.hand_stats[hand_type].set_level(max(main_level // 2, 1))
-                self.G.hand_stats[hand_type].play_count = self.round
-        self.G.hand_stats["High Card"].play_count = self.round * 2
-
-        self.G.dollars -= main_level * 2
-        self.G.dollars = max(self.G.dollars, 0)
-
-        suit_homogeneity = random() * self.round / 24
-        rank_homogeneity = random() * self.round / 24
-        random_card_rate = random() * self.round / 10
-
-        preferred_suit = choice(Card.SUITS)
-        preferred_rank = choice(Card.RANKS)
-
-        deck_size = randint(52 - self.round, 52 + self.round)
-        while len(self.G.deck.all_cards) < deck_size:
-            self.G.deck.add_card(Card.random())
-        while len(self.G.deck.all_cards) > deck_size:
-            self.G.deck.all_cards.pop(randint(0, len(self.G.deck.all_cards) - 1))
-
-        for card in self.G.deck.all_cards:
-            if random() < suit_homogeneity:
-                card.suit = preferred_suit
-            if random() < rank_homogeneity:
-                card.value = preferred_rank
-            if (
-                random() < random_card_rate
-                and card.enhancement == BaseCard.Enhancements.NORMAL
-                and card.seal == BaseCard.Seals.NO_SEAL
-                and card.edition == BaseCard.Editions.NO_EDITION
-            ):
-                sample_card = Card.random()
-                card.enhancement = sample_card.enhancement
-                card.seal = sample_card.seal
-                card.edition = sample_card.edition
-
-        self.G.dollars -= int(suit_homogeneity)
-        self.G.dollars -= int(rank_homogeneity)
-        self.G.dollars = max(self.G.dollars, 0)
+        
+        deck_size = 52
 
         self.G.dollars += int(random() * self.round * 2)
 

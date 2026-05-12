@@ -141,9 +141,10 @@ class RoundLoggerCallback(DefaultCallbacks):
 
         total_hands = sum(hand_counts.values())
         for hand_type in hand_counts:
-            episode.custom_metrics[f"hand_{hand_type}"] = (
-                hand_counts[hand_type] / total_hands
-            )
+            if total_hands > 0:
+                episode.custom_metrics[f"hand_{hand_type}"] = (
+                    hand_counts[hand_type] / total_hands
+                )
             # row[f"hand_{hand_type}"] = hand_counts[hand_type]
 
         if shop_env is not None:

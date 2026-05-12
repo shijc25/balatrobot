@@ -26,8 +26,8 @@ def register_custom_assets():
 # ==========================================
 # 1. 配置参数 (请填入你的真实路径)
 # ==========================================
-CHECKPOINT_PATH = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_9f560_00000_0_2026-04-27_13-33-29/checkpoint_000086/"
-NUM_EPISODES = 10
+CHECKPOINT_PATH = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_227ae_00000_0_2026-05-11_04-30-50/checkpoint_000006"
+NUM_EPISODES = 50
 
 def format_cards(cards):
     """将卡牌对象转化为人类可读的字符串列表"""

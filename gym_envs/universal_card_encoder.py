@@ -1,80 +1,113 @@
 import torch
 import torch.nn as nn
 from gym_envs.base_card import BaseCard
-import math
+
+def init_hidden(m):
+    if isinstance(m, nn.Linear):
+        nn.init.orthogonal_(m.weight, gain=1.414)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
+    elif isinstance(m, nn.LayerNorm):
+        nn.init.constant_(m.weight, 1.0)
+        nn.init.constant_(m.bias, 0.0)
+
+class Projector(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.shortcut = nn.Linear(in_dim, out_dim)
+        
+        self.non_linear = nn.Sequential(
+            nn.Linear(in_dim, out_dim * 2),
+            nn.LayerNorm(out_dim * 2),
+            nn.GELU(),
+            nn.Linear(out_dim * 2, out_dim),
+        )
+        self.final_norm = nn.LayerNorm(out_dim)
+        
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            if m is self.shortcut:
+                nn.init.orthogonal_(m.weight, gain=1.0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+            elif m is self.non_linear[-1]:
+                nn.init.orthogonal_(m.weight, gain=0.01)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+            else:
+                nn.init.orthogonal_(m.weight, gain=1.414)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+                    
+    def forward(self, x):
+        return self.final_norm(self.shortcut(x) + self.non_linear(x))
+
+def make_projector(in_dim, out_dim):
+    return Projector(in_dim, out_dim)
 
 class UniversalCardEncoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.embedding_size = 63 
-        self.segment_size = 2
-        self.edition_size = 2
-        self.seal_size = 2
-        self.enhancement_size = 2
+        self.dim = 128
         
-        self.main_embedding_size = 49
-        self.suit_embedding_size = 23
-
-        self.general_index_embedding = nn.Embedding(BaseCard.total_cards, self.main_embedding_size, padding_idx=0)
-        self.enhancement_embedding = nn.Embedding(BaseCard.num_enhancements, self.enhancement_size, padding_idx=0)
-        self.edition_embedding = nn.Embedding(BaseCard.num_editions, self.edition_size, padding_idx=0)
-        self.seal_embedding = nn.Embedding(BaseCard.num_seals, self.seal_size, padding_idx=0)
-        self.segment_embedding = nn.Embedding(BaseCard.num_segments, self.segment_size, padding_idx=0)
-
-        self.suit_embedding = nn.Embedding(BaseCard.num_suits, self.suit_embedding_size - 5, padding_idx=0)
-        self.rank_embedding = nn.Embedding(BaseCard.num_ranks, self.main_embedding_size - self.suit_embedding_size - 2, padding_idx=0)
+        self.general_index_embedding = nn.Embedding(BaseCard.total_cards, 42, padding_idx=0)
+        self.rank_embedding = nn.Embedding(BaseCard.num_ranks, 16, padding_idx=0)
+        self.suit_embedding = nn.Embedding(BaseCard.num_suits, 16, padding_idx=0)
+        
+        for emb in [self.general_index_embedding, self.rank_embedding, self.suit_embedding]:
+            nn.init.normal_(emb.weight, mean=0.0, std=0.02)
+        
+        self.scalar_projector = make_projector(6, 16)
+        self.relational_projector = make_projector(3, 16)
+        
+        self.enhancement_embedding = nn.Embedding(BaseCard.num_enhancements, 4, padding_idx=0)
+        self.edition_embedding = nn.Embedding(BaseCard.num_editions, 4, padding_idx=0)
+        self.seal_embedding = nn.Embedding(BaseCard.num_seals, 4, padding_idx=0)
+        self.rarity_embedding = nn.Embedding(BaseCard.num_rarities, 4, padding_idx=0)
+        self.segment_embedding = nn.Embedding(BaseCard.num_segments, 4, padding_idx=0)
 
     def forward(self, cards_obs):
-        B, L = cards_obs["indices"].shape
         device = cards_obs["indices"].device
+        B, L = cards_obs["indices"].shape
+        
+        seg_raw = cards_obs["segment"].long()
+        valid_mask = (cards_obs["segment"] != 0).float().unsqueeze(-1)
+        playing_card_mask = ((seg_raw == 1) | (seg_raw == 2)).float().unsqueeze(-1)
 
         idx_emb = self.general_index_embedding(cards_obs["indices"].long())
-        enh_emb = self.enhancement_embedding(cards_obs["enhancement"].long())
-        edi_emb = self.edition_embedding(cards_obs["edition"].long())
-        seal_emb = self.seal_embedding(cards_obs["seal"].long())
-        seg_emb = self.segment_embedding(cards_obs["segment"].long())
-        
-        suit_emb = self.suit_embedding(cards_obs["suit"].long())
+
         rank_emb = self.rank_embedding(cards_obs["rank"].long())
-        
+        suit_emb = self.suit_embedding(cards_obs["suit"].long())
+        rank_suit_emb = torch.cat([rank_emb, suit_emb], dim=-1)
+        rank_suit_emb = rank_suit_emb * playing_card_mask * valid_mask
+
         ranks = cards_obs["rank"]
         suits = cards_obs["suit"]
-        mask = (cards_obs["indices"] == 0)
-
+        
         same_rank_count = (ranks.unsqueeze(-1) == ranks.unsqueeze(-2)).sum(dim=-1).float()
-        same_rank_feat = torch.where(mask, 0.0, same_rank_count / 5.0).unsqueeze(-1)
+        same_rank_feat = (same_rank_count / 10.0).unsqueeze(-1)
         
-        is_face_card = ((ranks >= 11) & (ranks <= 13)).float().unsqueeze(-1)
-
-        suit_counts = torch.stack([
-            (suits == s).sum(dim=1) for s in range(1, 5)
-        ], dim=1).float()
+        same_suit_count = (suits.unsqueeze(-1) == suits.unsqueeze(-2)).sum(dim=-1).float()
+        same_suit_feat = (same_suit_count / 10.0).unsqueeze(-1)
         
-        suit_ratios = (suit_counts / float(L)).unsqueeze(1).expand(-1, L, -1)
-        suit_ratios = torch.where(mask.unsqueeze(-1), 0.0, suit_ratios)
-
-        card_suit_total = torch.gather(suit_counts, 1, (suits.long() - 1).clamp(0, 3))
-        flush_potential = (card_suit_total / 5.0).float().unsqueeze(-1)
-        flush_potential = torch.where(mask.unsqueeze(-1), 0.0, flush_potential)
-
-        suit_part = torch.cat([suit_emb, suit_ratios, flush_potential], dim=-1)
-        rank_part = torch.cat([rank_emb, same_rank_feat, is_face_card], dim=-1)
+        is_face_card = ((ranks >= 10) & (ranks <= 12)).float().unsqueeze(-1)
         
-        suit_rank_emb = torch.cat([suit_part, rank_part], dim=-1)
+        rel_combined = torch.cat([same_rank_feat, same_suit_feat, is_face_card], dim=-1)
+        rel_emb = self.relational_projector(rel_combined)
+        rel_emb = rel_emb * playing_card_mask * valid_mask
 
         raw_scalars = cards_obs["scalar_properties"].float()
         is_debuffed = cards_obs["debuffed"].float().unsqueeze(-1)
         raw_scalars = raw_scalars * (1.0 - is_debuffed)
-
-        c_cost  = raw_scalars[:, :, 0]
-        c_chips = raw_scalars[:, :, 1]
-        c_mult  = raw_scalars[:, :, 2]
-        c_xmult = raw_scalars[:, :, 3]
-
-        log_chips = torch.log10(c_chips + 1.0) / 3.0
-        log_mult  = torch.log10(c_mult + 1.0) / 2.0
         
-        scalars = torch.stack([
+        c_cost, c_chips, c_mult, c_xmult = raw_scalars.unbind(dim=-1)
+        
+        log_chips = torch.log10(torch.abs(c_chips) + 1.0) / 3.0
+        log_mult  = torch.log10(torch.abs(c_mult)  + 1.0) / 2.0
+        
+        scalars_vec = torch.stack([
             c_cost / 100.0,
             c_chips / 1000.0,
             log_chips,
@@ -82,14 +115,24 @@ class UniversalCardEncoder(nn.Module):
             log_mult,
             c_xmult / 5.0
         ], dim=-1)
+        
+        scalar_emb = self.scalar_projector(scalars_vec)
+        scalar_emb = scalar_emb * valid_mask
 
-        embeddings = torch.cat([
-            idx_emb + suit_rank_emb, # 49
-            scalars,                # 6
-            seg_emb,                # 2
-            enh_emb,                # 2
-            edi_emb,                # 2
-            seal_emb                # 2
+        enh_emb = self.enhancement_embedding(cards_obs["enhancement"].long()) 
+        edi_emb = self.edition_embedding(cards_obs["edition"].long())         
+        seal_emb = self.seal_embedding(cards_obs["seal"].long())              
+        rarity_emb = self.rarity_embedding(cards_obs["rarity"].long())        
+        seg_emb = self.segment_embedding(seg_raw)                             
+        
+        cat_emb = torch.cat([enh_emb, edi_emb, seal_emb, rarity_emb, seg_emb], dim=-1)
+        cat_emb = cat_emb * valid_mask
+
+        core_embeddings = torch.cat([
+            idx_emb, rank_suit_emb, rel_emb, scalar_emb, cat_emb
         ], dim=-1)
-
-        return embeddings, mask
+        
+        logical_flags = torch.zeros(B, L, 2, device=device)
+        full_embeddings = torch.cat([core_embeddings, logical_flags], dim=-1)
+        
+        return full_embeddings

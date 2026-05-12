@@ -96,7 +96,6 @@ class HandType:
             HandType("Three of a Kind", 3, 30, 2, 20, 3),
             HandType("Straight", 4, 30, 3, 30, 4),
             HandType("Flush", 4, 35, 2, 15, 5),
-            # HandType("Flush", 5, 40, 2, 15, 5), # stronger flush to see if it helps learn them early
             HandType("Full House", 4, 40, 2, 25, 6),
             HandType("Four of a Kind", 7, 60, 3, 30, 7),
             HandType("Straight Flush", 8, 100, 4, 40, 8),

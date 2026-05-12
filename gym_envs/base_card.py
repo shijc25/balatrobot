@@ -130,6 +130,7 @@ class BaseCard:
     num_editions = 5  # Including no edition
     num_seals = 5  # including no seal
     num_scalar_properties = 4  # Value, chips, mult, mult_mult
+    num_rarities = 4
 
     def __init__(self, segment=0, scalar_properties=None, u_index=None):
         if u_index is None:
@@ -207,6 +208,9 @@ class BaseCard:
 
     def get_u_rank_index(self):
         return 0
+    
+    def get_rarity(self):
+        return 0
 
     @staticmethod
     def observation_space(max_count):
@@ -225,6 +229,7 @@ class BaseCard:
                 "segment": sp.Box(0, BaseCard.num_segments, (max_count,), np.int32),
                 "suit": sp.Box(0, BaseCard.num_suits, (max_count,), np.int32),
                 "rank": sp.Box(0, BaseCard.num_ranks, (max_count,), np.int32),
+                "rarity": sp.Box(0, BaseCard.num_rarities, (max_count,), np.int32),
             }
         )
 
@@ -240,6 +245,7 @@ class BaseCard:
             "segment": np.zeros(max_count, dtype=np.int32),
             "suit": np.zeros(max_count, dtype=np.int32),
             "rank": np.zeros(max_count, dtype=np.int32),
+            "rarity": np.zeros(max_count, dtype=np.int32),
         }
         for i, card in zip(range(max_count), cards):
             obs["indices"][i] = card.get_universal_index()
@@ -253,5 +259,6 @@ class BaseCard:
             )
             obs["suit"][i] = card.get_u_suit_index()
             obs["rank"][i] = card.get_u_rank_index()
+            obs["rarity"][i] = card.get_rarity()
 
         return obs

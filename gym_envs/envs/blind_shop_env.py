@@ -39,7 +39,7 @@ class BlindShopEnv(MultiAgentEnv):
             "shop_starts_enabled", True
         )  # shop starts disabled until the blind agent warms up
         self.cycle_blind_agents = env_config.get("cycle_blind_agents", True)
-        self.truncate_blind_agents = env_config.get("truncate_blind_agents", False)
+        self.truncate_blind_agents = env_config.get("truncate_blind_agents", True)
         self.connect_to_balatro = env_config.get("connect_to_balatro", False)
         self.balatro_connection = None
         self.blind_steps = ["select_cards_from_hand"]
@@ -65,6 +65,8 @@ class BlindShopEnv(MultiAgentEnv):
         self.blind_agent_i = 0
         self.steps_in_phase = 0
         self.total_steps = 0
+        
+        self.held_strategy_token = np.zeros(256, dtype=np.float32)
         
         # self.data_dir = self.data_dir = "/root/autodl-tmp/evaluator_data_3"
         # if not os.path.exists(self.data_dir):
@@ -92,6 +94,7 @@ class BlindShopEnv(MultiAgentEnv):
         options = {} if catchup_round == 1 else {"catchup_round": catchup_round}
         blind_obs = self.blind_env.reset(options=options)[0]
         self.shop_env.reset()
+        self.shop_env.round = self.blind_env.round
         self.data_from_blind_to_shop()
         shop_obs = self.shop_env.get_obs()
         self.blind_env.G.dollars = self.shop_env.G.dollars
@@ -109,6 +112,7 @@ class BlindShopEnv(MultiAgentEnv):
 
         if self._phase == "blind":
             self.held_shop_info = {}
+            self.held_shop_reward = 0.0
             return {self.blind_agent_id(): blind_obs}, {self.blind_agent_id(): {}}
         else:
             self.held_blind_reward = 0
@@ -223,6 +227,7 @@ class BlindShopEnv(MultiAgentEnv):
             # If done, return held blind observation
             else:
                 self.held_shop_info = shop_info
+                self.held_shop_reward = shop_reward
                 blind_obs, blind_reward, blind_info = self.ended_shop()
                 return (
                     {self.blind_agent_id(): blind_obs},
@@ -256,27 +261,14 @@ class BlindShopEnv(MultiAgentEnv):
                     self.blind_agent_id(),
                     blind_obs,
                     blind_reward,
-                    blind_done or won_run,
-                    blind_trunc,
+                    True,
+                    True,
                     blind_info,
                 )
 
                 if self.cycle_blind_agents:
-                    if self.truncate_blind_agents and not won_run:
-                        # We have to partially reset the round so that the value function can
-                        # Bootstrap a reasonable value for the next agent
-                        self.blind_env.fresh_blind(fake_reset=True)
-                        old_blind_result = (
-                            old_blind_result[0],
-                            self.blind_env.get_obs(),
-                            old_blind_result[2],
-                            True,
-                            True,
-                            old_blind_result[5],
-                        )
-
                     result.append(old_blind_result)
-                    
+                
                 # if won_run:
                 #     self._on_episode_end(round=24)
                     
@@ -383,14 +375,14 @@ class BlindShopEnv(MultiAgentEnv):
         if any(joker.name == "To the Moon" for joker in self.blind_env.G.owned_jokers):
             interest *= 2
 
-        cash_gained = interest + 3 + self.blind_env.hands_left
+        cash_gained = interest + 3 + ((self.shop_env.round - 1) % 3) + self.blind_env.hands_left
         self.shop_env.G.dollars += cash_gained
 
         self.shop_env.round += 1
         self.shop_env.next_blind = Blind.random(round=self.shop_env.round)
         self.shop_env.new_shop()
         
-        reward = 0.0
+        reward = self.held_shop_reward
         
         won_run = self.shop_env.round == 25
         

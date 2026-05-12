@@ -289,63 +289,63 @@ def joker_card_score_effects(jokers, card_scored, gamestate):
                 gamestate.dollars += 4
         elif joker.name == "Scary Face" and card_scored.is_face_card(jokers=jokers):
             effects["chips"] += 30
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.5
         elif joker.name == "Even Steven" and card_scored.value in [2, 4, 6, 8, 10]:
             effects["mult"] += 4
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.3
         elif joker.name == "Odd Todd" and card_scored.value in [3, 5, 7, 9, 14]:
             effects["chips"] += 31
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.3
         elif joker.name == "Scholar" and card_scored.value == 14:
             effects["chips"] += 20
             effects["mult"] += 4
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.5
         elif joker.name == "Walkie Talkie" and card_scored.value in [4, 10]:
             effects["chips"] += 10
             effects["mult"] += 4
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.5
         elif joker.name == "Smiley Face" and card_scored.is_face_card(jokers=jokers):
             effects["mult"] += 5
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.5
         elif joker.name == "Fibonacci" and card_scored.value in [2, 3, 5, 8, 14]:
             effects["mult"] += 8
-            effects["synergy"] += 0.2
+            effects["synergy"] += 0.3
         elif joker.name == "Wee Joker":
             if card_scored.value == 2:
                 joker.state["chips"] += 8
         elif joker.name == "Rough Gem":
             if card_scored.suit == "Diamonds":
                 effects["callbacks"].append(("earn_money", 1))
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0
         elif joker.name == "Business Card":
             if card_scored.is_face_card(jokers=jokers):
                 if random.random() < 0.5:
                     effects["callbacks"].append(("earn_money", 2))
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0
         elif joker.name == "Bloodstone":
             if card_scored.suit == "Hearts":
                 if random.random() < 0.5:
                     effects["mult_mult"] *= 1.5
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0
         elif joker.name == "Arrowhead":
             if card_scored.suit == "Spades":
                 effects["chips"] += 50
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0.5
         elif joker.name == "Onyx Agate":
             if card_scored.suit == "Clubs":
                 effects["mult"] += 7
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0.5
         elif joker.name == "Photograph":
             if card_scored.is_face_card(jokers=jokers) and not joker.state.get(
                 "triggered_this_hand", False
             ):
                 joker.state["triggered_this_hand"] = True
                 effects["mult_mult"] *= 2
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0.5
         elif joker.name == "Triboulet":
             if card_scored.value in [12, 13]:
                 effects["mult_mult"] *= 2
-                effects["synergy"] += 0.2
+                effects["synergy"] += 0
         elif joker.name in ["Blueprint", "Brainstorm"]:
             # For right now we are going to randomly select targets to copy
             copyable_jokers = [j for j in jokers if j.copyable()]
@@ -423,14 +423,14 @@ def joker_triggered_effects(
         elif joker.name == "Card Sharp":
             if hand_stats[hand_type].played_this_blind:
                 effects["mult_mult"] *= 3
-                effects["synergy"] += 1
+                effects["synergy"] += 5
         elif joker.name == "Blue Joker":
             effects["chips"] += 2 * len(deck.remaining_cards)
-            effects["synergy"] += len(deck.remaining_cards) / 100.0
+            effects["synergy"] += len(deck.remaining_cards) / 50.0
         elif joker.name == "Erosion":
             below_start = max(0, 52 - len(deck.all_cards))
             effects["mult"] += 4 * below_start
-            effects["synergy"] += below_start / 10.0
+            effects["synergy"] += 0
         elif joker.name == "Square Joker":
             if len(cards_played) == 4:
                 joker.state["chips"] += 4
@@ -468,23 +468,23 @@ def joker_triggered_effects(
                 "Four of a Kind",
             ]:
                 effects["mult"] += 8
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Zany Joker":
             if hand_type in ["Three of a Kind", "Full House", "Four of a Kind"]:
                 effects["mult"] += 12
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Mad Joker":
             if hand_type in ["Two Pair", "Full House"]:
                 effects["mult"] += 10
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Crazy Joker":
             if hand_type in ["Straight", "Straight Flush"]:
                 effects["mult"] += 12
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Droll Joker":
             if hand_type in ["Flush", "Straight Flush"]:
                 effects["mult"] += 10
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Sly Joker":
             if hand_type in [
                 "Pair",
@@ -494,7 +494,7 @@ def joker_triggered_effects(
                 "Four of a Kind",
             ]:
                 effects["chips"] += 50
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "The Duo":
             if hand_type in [
                 "Pair",
@@ -504,43 +504,43 @@ def joker_triggered_effects(
                 "Four of a Kind",
             ]:
                 effects["mult_mult"] *= 2
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Wily Joker":
             if hand_type in ["Three of a Kind", "Full House", "Four of a Kind"]:
                 effects["chips"] += 100
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "The Trio":
             if hand_type in ["Three of a Kind", "Full House", "Four of a Kind"]:
                 effects["mult_mult"] *= 3
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "The Family":
             if hand_type in ["Four of a Kind"]:
                 effects["mult_mult"] *= 4
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Clever Joker":
             if hand_type == "Two Pair":
                 effects["chips"] += 80
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Devious Joker":
             if hand_type in ["Straight", "Straight Flush"]:
                 effects["chips"] += 100
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "The Order":
             if hand_type in ["Straight", "Straight Flush"]:
                 effects["mult_mult"] *= 3
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Crafty Joker":
             if hand_type in ["Flush", "Straight Flush"]:
                 effects["chips"] += 80
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "The Tribe":
             if hand_type in ["Flush", "Straight Flush"]:
                 effects["mult_mult"] *= 2
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Half Joker":
             if len(cards_played) <= 3:
                 effects["mult"] += 20
-                effects["synergy"] += 1
+                effects["synergy"] += 5
         elif joker.name == "Misprint":
             effects["mult"] += random.randint(0, 23)
         elif joker.name == "Raised Fist":
@@ -550,11 +550,11 @@ def joker_triggered_effects(
             effects["mult_mult"] *= 1.5 * sum(
                 1 for card in cards_in_hand if card.value == 13
             )
-            effects["synergy"] += sum(1 for card in cards_in_hand if card.value == 13)
+            effects["synergy"] += 0
         elif joker.name == "Runner":
             if hand_type in ["Straight", "Straight Flush"]:
                 joker.state["chips"] += 15
-                effects["synergy"] += 1
+                effects["synergy"] += 0
             effects["chips"] += joker.state["chips"]
         elif joker.name == "Shoot the Moon":
             match_count = sum(1 if card.value == 12 else 0 for card in cards_in_hand)
@@ -582,7 +582,7 @@ def joker_triggered_effects(
         elif joker.name == "Acrobat":
             if hands_left == 0:
                 effects["mult_mult"] *= 3
-                effects["synergy"] += 1
+                effects["synergy"] += 3
         elif joker.name == "Banner":
             effects["chips"] += 30 * discards_left
             effects["synergy"] += discards_left / 3.0
@@ -592,31 +592,35 @@ def joker_triggered_effects(
                 effects["synergy"] += 1
         elif joker.name == "Ramen":
             effects["mult_mult"] *= joker.state["mult_mult"]
+            effects["synergy"] += 0.5
         elif joker.name == "Green Joker":
             joker.state["mult"] += 1
             effects["mult"] += joker.state["mult"]
-            effects["synergy"] += 1
+            effects["synergy"] += 2
         elif joker.name == "Ride the Bus":
             if any(card.is_face_card(jokers=jokers) for card in cards_scored):
-                effects["synergy"] -= joker.state["mult"]
+                effects["synergy"] -= joker.state["mult"] / 10.0
                 joker.state["mult"] = 0
             else:
                 joker.state["mult"] += 1
-                effects["synergy"] += 1
+                effects["synergy"] += 3
             effects["mult"] += joker.state["mult"]
         elif joker.name == "Gros Michel":
             effects["mult"] += 15
+            effects["synergy"] += 0.5
         elif joker.name == "Cavendish":
             effects["mult_mult"] *= 3
+            effects["synergy"] += 0.5
         elif joker.name == "Wee Joker":
             effects["chips"] += joker.state["chips"]
         elif joker.name == "Constellation":
             effects["mult_mult"] *= joker.state["mult_mult"]
+            effects["synergy"] += joker.state["mult_mult"]
         elif joker.name == "Flash Card":
             effects["mult"] += joker.state["mult"]
         elif joker.name == "Flower Pot":
             if all(
-                suit in [card.suit for card in cards_played]
+                suit in [card.suit for card in cards_scored]
                 for suit in ["Diamonds", "Clubs", "Hearts", "Spades"]
             ):
                 effects["mult_mult"] *= 3
@@ -625,7 +629,7 @@ def joker_triggered_effects(
             if any(card.suit == "Clubs" for card in cards_scored):
                 if any(card.suit != "Clubs" for card in cards_scored):
                     effects["mult_mult"] *= 2
-                    effects["synergy"] += 1
+                    effects["synergy"] += 3
         elif joker.name == "Hit the Road":
             effects["mult_mult"] *= joker.state["mult_mult"]
         elif joker.name == "Blackboard":
@@ -635,7 +639,7 @@ def joker_triggered_effects(
                 for card in cards_in_hand
             ):
                 effects["mult_mult"] *= 3
-                effects["synergy"] += 1
+                effects["synergy"] += 5
         elif joker.name == "Baseball Card":
             for j in jokers:
                 if j.rarity == 1:  # Uncommon
@@ -690,10 +694,10 @@ def joker_discard_effects(jokers, cards_discarded):
         elif joker.name == "Faceless Joker":
             if len([x for x in cards_discarded if x.is_face_card(jokers=jokers)]) >= 3:
                 effects["callbacks"].append(("earn_money", 5))
-                effects["synergy"] += 1
+                effects["synergy"] += 0
         elif joker.name == "Hit the Road":
             jacks_discarded = sum(1 for card in cards_discarded if card.value == 11)
-            effects["synergy"] += jacks_discarded
+            effects["synergy"] += 0.5 * jacks_discarded
             joker.state["mult_mult"] += 0.5 * jacks_discarded
         elif joker.name == "Yorick":
             joker.state["discards_left"] -= len(cards_discarded)
@@ -757,8 +761,12 @@ def joker_round_start_effects(jokers, hand, hands_left, discards_left):
                 effects["hands_left"] += 3
                 effects["discards_left"] = 0
             case "Riff-Raff":
-                effects["callbacks"].append(("add_joker", Joker.random(force_rarity=0)))
-                effects["callbacks"].append(("add_joker", Joker.random(force_rarity=0)))
+                for _ in range(2):
+                    new_joker = Joker.random(force_rarity=0)
+                    if isinstance(new_joker, Joker) and new_joker.get_universal_index() != 0:
+                        effects["callbacks"].append(("add_joker", new_joker))
+                    else:
+                        pass
             case "Hit the Road":
                 joker.state["mult_mult"] = 1
             case "Merry Andy":

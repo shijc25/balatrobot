@@ -6,9 +6,11 @@ from torch.distributions import Categorical
 class AutoregressiveCardDist(TorchDistributionWrapper):
     def __init__(self, inputs, model):
         super().__init__(inputs, model)
+        B = inputs.shape[0]
+        self.cached_features = inputs[:, :33*128].view(B, 33, 128)
+        self.masks = inputs[:, 33*128:]
         self.model = model
         self._cached_entropy = None
-        self._last_actions = None
         
     @staticmethod
     def required_model_output_shape(action_space, model_config):
@@ -25,26 +27,37 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
             hand_mask = torch.zeros(B, 10, device=device)
             actions = []
             selected_mode = None
+            stopped = torch.zeros(B, dtype=torch.bool, device=device)
             
             for i in range(6):
-                mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i, selected_mode=selected_mode)
+                if i > 0 and stopped.all():
+                    for _ in range(i, 6):
+                        actions.append(torch.full((B,), 10, device=device, dtype=torch.long))
+                    break
+
+                mode_logits, card_logits = self.model.ar_step(
+                    self.cached_features, hand_mask, self.masks, step_idx=i, selected_mode=selected_mode
+                )
                 
                 if i == 0:
-                    mode_dist = Categorical(logits=mode_logits)
-                    mode_act = mode_dist.sample()
+                    mode_act = Categorical(logits=mode_logits).sample()
                     actions.append(mode_act)
                     selected_mode = mode_act
                     continue
-                    
-                card_dist = Categorical(logits=card_logits)
-                card_act = card_dist.sample()
-                actions.append(card_act)
                 
-                is_card = card_act < 10
+                card_act = Categorical(logits=card_logits).sample()
+                
+                final_act = torch.where(stopped, torch.tensor(10, device=device), card_act)
+                actions.append(final_act)
+                
+                stopped = stopped | (final_act == 10)
+                
+                is_card = (final_act < 10)
                 if is_card.any():
-                    batch_idx = torch.where(is_card)[0]
-                    selected_card = card_act[is_card]
-                    hand_mask[batch_idx, selected_card] = 1.0
+                    batch_idx = torch.where(is_card & (~stopped))[0]
+                    if len(batch_idx) > 0:
+                        selected_card = final_act[batch_idx]
+                        hand_mask[batch_idx, selected_card] = 1.0
 
             self.last_sample = torch.stack(actions, dim=1)
             return self.last_sample
@@ -57,9 +70,17 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
             hand_mask = torch.zeros(B, 10, device=device)
             actions = []
             selected_mode = None
+            stopped = torch.zeros(B, dtype=torch.bool, device=device)
             
             for i in range(6):
-                mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i, selected_mode=selected_mode)
+                if i > 0 and stopped.all():
+                    for _ in range(i, 6):
+                        actions.append(torch.full((B,), 10, device=device, dtype=torch.long))
+                    break
+
+                mode_logits, card_logits = self.model.ar_step(
+                    self.cached_features, hand_mask, self.masks, step_idx=i, selected_mode=selected_mode
+                )
                 
                 if i == 0:
                     mode_act = torch.argmax(mode_logits, dim=-1)
@@ -68,20 +89,21 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
                     continue
                 
                 card_act = torch.argmax(card_logits, dim=-1)
-                actions.append(card_act)
+                final_act = torch.where(stopped, torch.tensor(10, device=device), card_act)
+                actions.append(final_act)
                 
-                is_card = card_act < 10
+                stopped = stopped | (final_act == 10)
+                is_card = (final_act < 10)
                 if is_card.any():
-                    batch_idx = torch.where(is_card)[0]
-                    selected_card = card_act[is_card]
-                    hand_mask[batch_idx, selected_card] = 1.0
+                    batch_idx = torch.where(is_card & (~stopped))[0]
+                    if len(batch_idx) > 0:
+                        selected_card = final_act[batch_idx]
+                        hand_mask[batch_idx, selected_card] = 1.0
 
             self.last_sample = torch.stack(actions, dim=1)
             return self.last_sample
 
     def logp(self, actions):
-        self._last_actions = actions
-        
         B = actions.shape[0]
         device = actions.device
         hand_mask = torch.zeros(B, 10, device=device)
@@ -93,80 +115,39 @@ class AutoregressiveCardDist(TorchDistributionWrapper):
         true_mode = actions[:, 0]
 
         for i in range(6):
-            if stopped.all() and i > 0: break
+            if i > 0 and stopped.all(): break
                 
             current_mode = None if i == 0 else true_mode
-            mode_logits, card_logits = self.model.ar_step(hand_mask, step_idx=i, selected_mode=current_mode)
+            mode_logits, card_logits = self.model.ar_step(
+                self.cached_features, hand_mask, self.masks, step_idx=i, selected_mode=current_mode
+            )
             
             if i == 0:
                 mode_dist = Categorical(logits=mode_logits)
-                total_logp += mode_dist.log_prob(actions[:, 0])
-                total_entropy += mode_dist.entropy()
+                total_logp = total_logp + mode_dist.log_prob(actions[:, 0])
+                total_entropy = total_entropy + mode_dist.entropy()
                 continue
                 
             card_dist = Categorical(logits=card_logits)
             card_act = actions[:, i]
             
-            logp = card_dist.log_prob(card_act)
-            total_logp += torch.where(stopped, torch.zeros_like(logp), logp)
+            logp_val = card_dist.log_prob(card_act)
+            total_logp = total_logp + torch.where(stopped, torch.zeros_like(logp_val), logp_val)
             
             ent = card_dist.entropy()
-            total_entropy += torch.where(stopped, torch.zeros_like(ent), ent)
-            
-            is_stop = card_act == 10
-            stopped = stopped | is_stop
+            total_entropy = total_entropy + torch.where(stopped, torch.zeros_like(ent), ent)
             
             is_card = (card_act < 10) & (~stopped)
             if is_card.any():
-                batch_idx = torch.where(is_card)[0]
-                selected_card = card_act[is_card]
-                hand_mask[batch_idx, selected_card] = 1.0
+                hand_mask = hand_mask.scatter(1, card_act.unsqueeze(-1).long().clamp(0, 9), is_card.float().unsqueeze(-1))
+            
+            stopped = stopped | (card_act == 10)
         
         self._cached_entropy = total_entropy
         return total_logp
     
     def kl(self, other):
-        actions = other._last_actions
-        if actions is None:
-            return torch.tensor(0.0, device=self.inputs.device)
-
-        B = actions.shape[0]
-        device = actions.device
-        hand_mask = torch.zeros(B, 10, device=device)
-        total_kl = torch.zeros(B, device=device)
-        stopped = torch.zeros(B, dtype=torch.bool, device=device)
-        
-        true_mode = actions[:, 0]
-
-        for i in range(6):
-            if stopped.all() and i > 0: break
-            
-            current_mode = None if i == 0 else true_mode
-            mode_logits_old, card_logits_old = self.model.ar_step(hand_mask, step_idx=i, selected_mode=current_mode)
-            mode_logits_new, card_logits_new = other.model.ar_step(hand_mask, step_idx=i, selected_mode=current_mode)
-            
-            if i == 0:
-                d_old = Categorical(logits=mode_logits_old)
-                d_new = Categorical(logits=mode_logits_new)
-                total_kl += torch.distributions.kl.kl_divergence(d_old, d_new)
-                continue
-                
-            d_old = Categorical(logits=card_logits_old)
-            d_new = Categorical(logits=card_logits_new)
-            
-            step_kl = torch.distributions.kl.kl_divergence(d_old, d_new)
-            total_kl += torch.where(stopped, torch.zeros_like(step_kl), step_kl)
-            
-            card_act = actions[:, i]
-            is_stop = card_act == 10
-            stopped = stopped | is_stop
-            is_card = (card_act < 10) & (~stopped)
-            if is_card.any():
-                batch_idx = torch.where(is_card)[0]
-                selected_card = card_act[is_card]
-                hand_mask[batch_idx, selected_card] = 1.0
-        
-        return total_kl
+        return torch.zeros(self.inputs.shape[0], device=self.inputs.device)
 
     def entropy(self):
         if self._cached_entropy is not None:

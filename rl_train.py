@@ -227,7 +227,7 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "max_jokers": max_jokers,
         "joker_count_range": (0, 0),
         "hand_level_range": (1, 1),
-        "joker_count_bias_exponent": -1.0,
+        "joker_count_bias_exponent": 0.0,
         "round_range": (1, 1),
     }
     return config
@@ -297,7 +297,7 @@ def default_blind_shop_env_config(
         },
         "connect_to_balatro": params["demo_mode"],
         "cycle_blind_agents": True,
-        "truncate_blind_agents": False,
+        "truncate_blind_agents": True,
         "catchup_probability": 0.0,
     }
 
@@ -372,17 +372,13 @@ def blind_config(
             batch_mode="complete_episodes",
         )
         .training(
-            train_batch_size=int(2**13),
-            sgd_minibatch_size=int(2**11),
-            num_sgd_iter=10,
-            lr=2e-4,
-            grad_clip=0.5,
-            clip_param=0.1,
+            grad_clip=3.0,
+            clip_param=0.2,
             kl_coeff=0.0,
-            vf_loss_coeff=0.5,
+            vf_loss_coeff=0.05,
             vf_clip_param=10.0,
-            entropy_coeff=0.0,
-            lambda_=0.95,
+            entropy_coeff=0.001,
+            lambda_=0.99,
             gamma=0.99,
             model=blind_model_config,
         )
@@ -425,11 +421,9 @@ def blind_shop_config(
             blind_env.action_space,
             {
                 "model": blind_model_config,
-                "kl_target": 0.01,
-                "kl_coeff": 0.2,
-                "entropy_coeff": 0.001,
-                "lr": 3e-4,
-                "lr_schedule": [[0, 3e-4], [2e8, 1e-4]],
+                "kl_coeff": 0.0,
+                "entropy_coeff": 0.0,
+                "lr": 1e-4,
                 "explore": not remote_env,
                 "lambda_": 0.99,
             },
@@ -440,11 +434,9 @@ def blind_shop_config(
             shop_env.action_space,
             {
                 "model": shop_model_config,
-                "kl_target": 0.01,
-                "kl_coeff": 0.2,
-                "entropy_coeff": 0.003,
-                "lr": 3e-4,
-                "lr_schedule": [[0, 3e-4], [5e7, 1e-4], [2e8, 3e-5]],
+                "kl_coeff": 0.0,
+                "entropy_coeff": 0.01,
+                "lr": 1e-4,
                 "explore": not remote_env,
                 "lambda_": 0.95,
             },
@@ -469,7 +461,7 @@ def blind_shop_config(
             explore=not remote_env,
             sample_timeout_s=60,
             batch_mode="truncate_episodes",
-            rollout_fragment_length=100,
+            rollout_fragment_length=150,
             compress_observations=False,
         )
         .multi_agent(
@@ -478,20 +470,11 @@ def blind_shop_config(
             policies_to_train=(["blind_agent", "shop_agent"] if not remote_env else []),
         )
         .training(
-            train_batch_size=int(2**15),
-            sgd_minibatch_size=int(2**11),
-            num_sgd_iter=3,
-            lr=1e-4,
             grad_clip=3.0,
-            clip_param=0.3,
+            clip_param=0.2,
+            vf_loss_coeff=0.5,
             vf_clip_param=10.0,
             gamma=0.99,
-            vf_loss_coeff=0.05,
-            optimizer={
-                "type": torch.optim.AdamW,
-                "weight_decay": 1e-4,
-                "eps": 1e-8,
-            },
         )
     )
     
@@ -514,11 +497,11 @@ def blind_shop_config(
     return apply_ppo_overrides(config, ppo_overrides)
 
 def manual_weight_init(algorithm):
-    best_blind_ckpt = r""
-    state_path = os.path.join(best_blind_ckpt, "policies", "default_policy", "policy_state.pkl")
+    best_blind_ckpt = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_75ae4_00000_0_2026-05-09_06-15-45/checkpoint_000000/"
+    state_path = os.path.join(best_blind_ckpt, "policies", "blind_agent", "policy_state.pkl")
     with open(state_path, "rb") as f:
         state_dict = pickle.load(f)
-    algorithm.get_policy("blind_agent").set_state(state_dict)
+    algorithm.get_policy("default_policy").set_state(state_dict)
     algorithm.workers.sync_weights()
 
 def run_training(
@@ -540,7 +523,7 @@ def run_training(
     ray_cfg = deep_merge(DEFAULT_RAY_CONFIG, config_data.get("ray", {}))
     ray_cfg.setdefault("ignore_reinit_error", True)
     ray.init(
-    object_store_memory=40 * 1024 * 1024 * 1024,
+    object_store_memory=45 * 1024 * 1024 * 1024,
     **ray_cfg)
 
     analysis = None

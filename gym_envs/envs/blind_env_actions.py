@@ -79,13 +79,14 @@ class BlindActionHelper:
                 if c == 10: break
                 if c < hand_actual_size:
                     cards.append(c + 1)
-                
-            if mode == 0 and self.discards_left <= 0: mode = 1
             
             if len(cards) == 0: 
                 cards = [1]
                 
-            return [Actions.PLAY_HAND if mode else Actions.DISCARD_HAND, cards]
+            if mode == 1 and self.discards_left <= 0:
+                mode = 0
+            
+            return [Actions.DISCARD_HAND if mode else Actions.PLAY_HAND, cards]
         else:
             raise ValueError(f"Unknown action mode: {action_mode}")
 

@@ -101,7 +101,7 @@ class BlindEnv(gym.Env):
         self.joker_count_bias_exponent = env_config.get(
             "joker_count_bias_exponent", 0.0
         )
-        self.starting_dollars = env_config.get("starting_dollars", 5.0)
+        self.starting_dollars = env_config.get("starting_dollars", 4.0)
         self.blind_obs = env_config.get("blind_obs", True)
         self.round_range = env_config.get("round_range", (1, 1))
         self.contained_hand_types_obs = env_config.get(
@@ -113,10 +113,6 @@ class BlindEnv(gym.Env):
         self.scoring_cards_mask_obs = env_config.get("scoring_cards_mask_obs", False)
         self.failure_progress_penalty = env_config.get("failure_progress_penalty", 0.0)
         self.stake = 0
-        self.missed_wins = []
-        self.missed_wins_length = 20
-        self.missed_wins_p = 0.5
-        self.missed_wins_decay_p = 0.5
 
         self.num_experts = env_config.get("num_experts", 0)
 
@@ -142,6 +138,7 @@ class BlindEnv(gym.Env):
         self.alpha = 0.01
 
         self.deck_hand = []
+        self.unique_hand_types_this_blind = set()
 
         # Hack to let us switch between multi agent and single agent without breaking the logger
         self.blind_env = self
@@ -227,14 +224,14 @@ class BlindEnv(gym.Env):
             print(illegal_reasons)
             return (self.get_obs(reset_hand=True), 0, True, False, {})
         
+        if self.hands_left <= 0:
+            print("YOU CAN'T PLAY WITH 0 HANDS LEFT")
+            return (self.get_obs(reset_hand=True), 0, True, False, {})
+        
         played_hand = self.G.hand.pop_cards(action[1])
         if len(played_hand) == 0:
             print("YOU CAN'T PLAY AN EMPTY HAND")
             return (self.get_obs(), 0, True, False, {})
-        
-        if self.hands_left <= 0:
-            print("ERROR: Tried to play with <=0 hands left.")
-            return (self.get_obs(reset_hand=True), 0, True, False, {})
 
         if action[0] == Actions.DISCARD_HAND:
             self.discards_played += 1
@@ -242,9 +239,24 @@ class BlindEnv(gym.Env):
             self.discard_count_counts[len(played_hand)] += 1
 
             reward = 0.0
+            
+            # Blackboard Wheel
+            # for joker in self.G.owned_jokers:
+            #    if joker.name == "Blackboard":
+            #        for card in played_hand:
+            #            if card.suit in ["Hearts", "Diamonds"]:
+            #                reward += 0.002
 
             effects = joker_discard_effects(self.G.owned_jokers, played_hand)
-            reward += effects["synergy"] * 0.0005
+            
+            hand_type, _ = played_hand.evaluate()
+            
+            if self.discards_played == 1:
+                for joker in self.G.owned_jokers:
+                    if joker.name == "Burnt Joker":
+                        self.G.hand_stats[hand_type].add_level(1)
+            
+            # reward += effects["synergy"] * 0.001
             self.handle_callbacks(effects["callbacks"])
 
             self.draw_cards()
@@ -268,6 +280,8 @@ class BlindEnv(gym.Env):
                 
             play_result = self.determine_play_hand_outcome(played_hand)
             
+            self.unique_hand_types_this_blind.add(play_result["hand_type"])
+            
             self.update_scored_card_stats(
                 play_result["scored_cards"], played_hand, play_result["hand_type"]
             )
@@ -276,10 +290,6 @@ class BlindEnv(gym.Env):
             if self.imagined_trajectories:
                 imagined_result = self.imagine_play_hand(played_hand, action)
 
-            if not play_result.get("won_round", False) and not self.hands_left == 0:
-                self.draw_cards()
-
-            self.reset_hand_watermarks()
             self.chips += play_result["hand_score"]
             
             if self.objective_mode in ["blind_grind"]:
@@ -299,6 +309,12 @@ class BlindEnv(gym.Env):
                     play_result["reward"] += (
                         0.1 + self.hands_left * 0.01
                     )
+                    
+                    # Hand Type Wheel
+                    # num_types = len(self.unique_hand_types_this_blind)
+                    # if num_types > 0:
+                    #    play_result["reward"] += 0.02 / num_types
+                    
                     effects = joker_round_win_effects(self.G)
                     self.handle_callbacks(effects["callbacks"])
                     for card in self.G.hand.cards:
@@ -307,9 +323,14 @@ class BlindEnv(gym.Env):
                     self.round += 1
                     play_result["won_round"] = True
                     
+            if not play_result.get("won_round", False) and not self.hands_left == 0:
+                self.draw_cards()
+
+            self.reset_hand_watermarks()
+                    
             if len(self.G.hand) == 0:
                 play_result["game_over"] = True
-
+            
             obs = self.get_obs(reset_hand=True)
             self.last_hand_played[self.hand_to_id[play_result["hand_type"]]] = 1
 
@@ -415,7 +436,7 @@ class BlindEnv(gym.Env):
                 hands_to_randomize = [choices(self.hands)[0]]
             for h in self.hands:
                 self.G.hand_stats[h].set_level(1, force=True)
-            num_upgraded_hands = randint(1, 2)
+            num_upgraded_hands = randint(1, 4)
             upgraded_hands = sample(self.hands, num_upgraded_hands)
             for hand_type in upgraded_hands:
                 chosen_hand_level = choices(

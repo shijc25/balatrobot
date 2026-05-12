@@ -35,7 +35,7 @@ class Blind:
         # ("Verdant Leaf", 8, 2), # All cards debuffed until 1 joker sold
         ("Violet Vessel", 8, 6),
         ("Crimson Heart", 8, 2),  # Random joker disabled every hand
-        # ("Cerulean Bell", 8, 2) # 1 card always force selected
+        # ("Cerulean Bell", 8, 2), # 1 card always force selected
     ]
 
     def __init__(self, name, round, chip_goal, index=None, reward=0):
