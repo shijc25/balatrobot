@@ -131,6 +131,7 @@ class Joker(BaseCard):
         sparse_pool=True,
         ignore_rarity=False,
         stake=0,  # Only for determining sticker pool
+        prob=1.0,
     ):
         locked_jokers = {
             "Glass Joker",
@@ -184,12 +185,13 @@ class Joker(BaseCard):
             joker = deepcopy(choice(possible_jokers))
             edition_r = random()
             if edition_r < 0.003:
-                joker.edition = BaseCard.Editions.NEGATIVE
-            elif edition_r < 0.006:
+                # joker.edition = BaseCard.Editions.NEGATIVE
+                None
+            elif edition_r < 0.006 * prob:
                 joker.edition = BaseCard.Editions.POLYCHROME
-            elif edition_r < 0.02:
+            elif edition_r < 0.02 * prob:
                 joker.edition = BaseCard.Editions.HOLOGRAPHIC
-            elif edition_r < 0.04:
+            elif edition_r < 0.04 * prob:
                 joker.edition = BaseCard.Editions.FOIL
 
             # Stickers currently overwrite eachother since we are reusing "seal", need a way to represent multiple stickers
@@ -252,7 +254,7 @@ jokers = [
     Joker(name="Devious Joker", index=14, value=4, rarity=0, state={}),
     Joker(name="Crafty Joker", index=15, value=4, rarity=0, state={}),
     Joker(name="Half Joker", index=16, value=5, rarity=0, state={}),
-    # Joker(name="Four Fingers", index=18, value=7, rarity=1, state={}),
+    Joker(name="Four Fingers", index=18, value=7, rarity=1, state={}),
     Joker(name="Banner", index=22, value=5, rarity=0, state={}),
     Joker(name="Mystic Summit", index=23, value=5, rarity=0, state={}),
     Joker(name="Raised Fist", index=29, value=5, rarity=0, state={}),
@@ -271,67 +273,67 @@ jokers = [
     Joker(name="To the Moon", index=84, value=5, rarity=1, state={}),
     Joker(name="Ramen", index=100, value=6, rarity=1, state={"mult_mult": 2}),
     Joker(name="Swashbuckler", index=110, value=4, rarity=0, state={}),
-    # Joker(name="Smeared Joker", index=113, value=7, rarity=1, state={}),
+    Joker(name="Smeared Joker", index=113, value=7, rarity=1, state={}),
     Joker(name="Acrobat", index=108, value=6, rarity=1, state={}),
     Joker(name="The Duo", index=131, value=8, rarity=2, state={}),
     Joker(name="The Trio", index=132, value=8, rarity=2, state={}),
     Joker(name="The Family", index=133, value=8, rarity=2, state={}),
     Joker(name="The Order", index=134, value=8, rarity=2, state={}),
     Joker(name="Shoot the Moon", index=140, value=5, rarity=0, state={}),
-    # Joker(name="Credit Card", index=20, value=1, rarity=0, state={}),
+    Joker(name="Credit Card", index=20, value=1, rarity=0, state={}),
     Joker(name="Chaos the Clown", index=30, value=4, rarity=0, state={}),
     Joker(name="Burglar", index=47, value=6, rarity=1, state={}),
     Joker(name="Wee Joker", index=124, value=8, rarity=2, state={"chips": 0}),
     Joker(name="Supernova", index=43, value=5, rarity=0, state={}),
-    # Joker(name="Space Joker", index=45, value=5, rarity=1, state={}),
+    Joker(name="Space Joker", index=45, value=5, rarity=1, state={}),
     Joker(name="Blue Joker", index=53, value=5, rarity=0),
     Joker(name="Hiker", index=56, value=5, rarity=1, state={}),
     Joker(name="Constellation", index=55, value=6, rarity=1, state={"mult_mult": 1}),
     Joker(name="Square Joker", index=65, value=4, rarity=0, state={"chips": 0}),
     Joker(name="Riff-Raff", index=67, value=6, rarity=0, state={}),
     Joker(name="Rough Gem", index=116, value=7, rarity=1, state={}),
-    # Joker(name="Bloodstone", index=117, value=7, rarity=1, state={}),
+    Joker(name="Bloodstone", index=117, value=7, rarity=1, state={}),
     Joker(name="Arrowhead", index=118, value=7, rarity=1, state={}),
     Joker(name="Onyx Agate", index=119, value=7, rarity=1, state={}),
     Joker(name="Flower Pot", index=122, value=6, rarity=1, state={}),
     Joker(name="Seeing Double", index=128, value=6, rarity=1, state={}),
-    # Joker(name="Hit the Road", index=130, value=8, rarity=2, state={"mult": 1}),
+    Joker(name="Hit the Road", index=130, value=8, rarity=2, state={"mult": 1}),
     Joker(name="Astronomer", index=143, value=8, rarity=1, state={}),
-    # Joker(name="Erosion", index=81, value=6, rarity=1, state={}),
+    Joker(name="Erosion", index=81, value=6, rarity=1, state={}),
     Joker(name="Pareidolia", index=37, value=5, rarity=1, state={}),
-    # Joker(name="Business Card", index=42, value=4, rarity=0, state={}),
+    Joker(name="Business Card", index=42, value=4, rarity=0, state={}),
     Joker(name="Card Sharp", index=62, value=6, rarity=1, state={}),
     Joker(name="Cloud 9", index=73, value=7, rarity=1, state={}),
     Joker(name="Popcorn", index=97, value=5, rarity=0, state={"mult": 20}),
     Joker(name="Blackboard", index=48, value=6, rarity=1, state={}),
     Joker(name="Bull", index=93, value=6, rarity=1, state={}),
     Joker(name="Bootstraps", index=145, value=7, rarity=1, state={}),
-    # Joker(name="Vampire", index=68, value=7, rarity=1, state={"mult_mult": 1}),
-    # Joker(name="Driver's License", index=141, value=7, rarity=2, state={}),
-    # Joker(name="Hologram", index=70, value=7, rarity=1, state={"mult_mult": 1}),
+    Joker(name="Vampire", index=68, value=7, rarity=1, state={"mult_mult": 1}),
+    Joker(name="Driver's License", index=141, value=7, rarity=2, state={}),
+    Joker(name="Hologram", index=70, value=7, rarity=1, state={"mult_mult": 1}),
     Joker(name="Photograph", index=78, value=5, rarity=0, state={}),
     Joker(name="Flash Card", index=96, value=5, rarity=1, state={"mult": 0}),
     Joker(name="Drunkard", index=88, value=4, rarity=0, state={}),
-    # Joker(name="Baron", index=72, value=8, rarity=2, state={}),
+    Joker(name="Baron", index=72, value=8, rarity=2, state={}),
     Joker(name="Mr. Bones", index=107, value=5, rarity=1, state={}),
     Joker(name="Gift Card", index=79, value=6, rarity=1, state={}),
     Joker(name="Baseball Card", index=92, value=8, rarity=2, state={}),
     Joker(name="Blueprint", index=123, value=10, rarity=2, state={}),
-    # Joker(name="Brainstorm", index=138, value=10, rarity=2, state={}),
-    # Joker(name="Runner", index=49, value=5, rarity=0, state={"chips": 0}),
-    # Joker(name="Troubadour", index=111, value=6, rarity=1, state={}),
+    Joker(name="Brainstorm", index=138, value=10, rarity=2, state={}),
+    Joker(name="Runner", index=49, value=5, rarity=0, state={"chips": 0}),
+    Joker(name="Troubadour", index=111, value=6, rarity=1, state={}),
     Joker(name="Juggler", index=87, value=4, rarity=0, state={}),
     Joker(name="Merry Andy", index=125, value=7, rarity=1, state={}),
     Joker(name="Stuntman", index=136, value=7, rarity=2, state={}),
     Joker(name="Joker Stencil", index=17, value=8, rarity=1, state={"mult": 1}),
     Joker(name="Satellite", index=139, value=6, rarity=1, state={}),
     Joker(name="Burnt Joker", index=144, value=8, rarity=2, state={}),
-    # Joker(name="Fortune Teller", index=86, value=6, rarity=0, state={}),
-    # Joker(name="Steel Joker", index=32, value=7, rarity=1),
-    # Joker(name="Glass Joker", index=120, value=6, rarity=1, state={"mult_mult": 1}),
-    # Joker(name="Stone Joker", index=89, value=6, rarity=1, state={}),
-    # Joker(name="Lucky Cat", index=91, value=6, rarity=1, state={"mult_mult": 1}),
-    # Joker(name="Golden Ticket", index=106, value=5, rarity=0, state={}),
+    Joker(name="Fortune Teller", index=86, value=6, rarity=0, state={}),
+    Joker(name="Steel Joker", index=32, value=7, rarity=1),
+    Joker(name="Glass Joker", index=120, value=6, rarity=1, state={"mult_mult": 1}),
+    Joker(name="Stone Joker", index=89, value=6, rarity=1, state={}),
+    Joker(name="Lucky Cat", index=91, value=6, rarity=1, state={"mult_mult": 1}),
+    Joker(name="Golden Ticket", index=106, value=5, rarity=0, state={}),
     ######################
     # Currently implementable
     # Joker(name="Trading Card", index=95, value=6, rarity=1, state={}),

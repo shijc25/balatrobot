@@ -6,6 +6,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import pickle
+import json
 from pathlib import Path
 
 os.environ["RAY_DEDUP_LOGS"] = "0"
@@ -90,7 +91,7 @@ def register_all():
     ModelCatalog.register_custom_action_dist("shop_custom_dist", ShopActionDist)
     ModelCatalog.register_custom_model("generic_blind_model", BalatroBlindModel)
     ModelCatalog.register_custom_model("generic_shop_model", BalatroShopModel)
-        
+
 register_all()
 
 def policy_mapping(agent_id, episode, **kwargs):
@@ -214,7 +215,6 @@ def default_blind_env_config(params: dict[str, Any]) -> dict[str, Any]:
         "goal_progress_reward": 0.0,
         "suit_homogeneity_bonus": 0.0,
         "joker_synergy_bonus": 0.0,
-        "flattened_rank_chips": False,
         "cannot_discard_obs": True,
         "contained_hand_types_obs": True,
         "subset_hand_types_obs": subset_hand_types is not None,
@@ -423,7 +423,7 @@ def blind_shop_config(
                 "model": blind_model_config,
                 "kl_coeff": 0.0,
                 "entropy_coeff": 0.0,
-                "lr": 1e-4,
+                "lr": 2e-4,
                 "explore": not remote_env,
                 "lambda_": 0.99,
             },
@@ -436,9 +436,9 @@ def blind_shop_config(
                 "model": shop_model_config,
                 "kl_coeff": 0.0,
                 "entropy_coeff": 0.01,
-                "lr": 1e-4,
+                "lr": 2e-4,
                 "explore": not remote_env,
-                "lambda_": 0.95,
+                "lambda_": 0.99,
             },
         ),
     }
@@ -461,8 +461,8 @@ def blind_shop_config(
             explore=not remote_env,
             sample_timeout_s=60,
             batch_mode="truncate_episodes",
-            rollout_fragment_length=150,
-            compress_observations=False,
+            rollout_fragment_length=100,
+            compress_observations=True,
         )
         .multi_agent(
             policies=POLICIES,
@@ -474,7 +474,7 @@ def blind_shop_config(
             clip_param=0.2,
             vf_loss_coeff=0.5,
             vf_clip_param=10.0,
-            gamma=0.99,
+            gamma=0.999,
         )
     )
     
@@ -497,11 +497,11 @@ def blind_shop_config(
     return apply_ppo_overrides(config, ppo_overrides)
 
 def manual_weight_init(algorithm):
-    best_blind_ckpt = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_75ae4_00000_0_2026-05-09_06-15-45/checkpoint_000000/"
+    best_blind_ckpt = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_6996d_00000_0_2026-05-13_12-44-23/checkpoint_000006/"
     state_path = os.path.join(best_blind_ckpt, "policies", "blind_agent", "policy_state.pkl")
     with open(state_path, "rb") as f:
         state_dict = pickle.load(f)
-    algorithm.get_policy("default_policy").set_state(state_dict)
+    algorithm.get_policy("blind_agent").set_state(state_dict)
     algorithm.workers.sync_weights()
 
 def run_training(
@@ -523,7 +523,13 @@ def run_training(
     ray_cfg = deep_merge(DEFAULT_RAY_CONFIG, config_data.get("ray", {}))
     ray_cfg.setdefault("ignore_reinit_error", True)
     ray.init(
-    object_store_memory=45 * 1024 * 1024 * 1024,
+    object_store_memory=30 * 1024 * 1024 * 1024,
+    _system_config={
+        "object_spilling_config": json.dumps({
+            "type": "filesystem", 
+            "params": {"directory_path": "/root/autodl-tmp/ray_spill"}
+        }),
+    },
     **ray_cfg)
 
     analysis = None

@@ -55,14 +55,14 @@ class RoundLoggerCallback(DefaultCallbacks):
         super().__init__()
         self.max_starting_jokers = 0
         self.shop_enabled = False
-        self.curriculum = [
-            "0_jokers",
-            "1_joker",
-            "deck_variation",
-            "2_jokers",
-            "shop_enabled",
-        ]
-        self.curriculum_index = 0
+        # self.curriculum = [
+        #     "0_jokers",
+        #     "1_joker",
+        #     "deck_variation",
+        #     "2_jokers",
+        #     "shop_enabled",
+        # ]
+        # self.curriculum_index = 0
         self.shop_joker_counts = Counter()
 
     def on_episode_end(
@@ -152,49 +152,49 @@ class RoundLoggerCallback(DefaultCallbacks):
                 episode.custom_metrics[x] = shop_env.telemetry[x]
             episode.custom_metrics["terminal_dollars"] = shop_env.G.dollars
 
-        rank_counts = {r: 0 for r in Card.RANKS}
-        # for rank in Card.RANKS:
-        #     count = 0
-        for card in blind_env.G.deck.all_cards:
-            rank_counts[card.value] += 1
-        for rank, count in rank_counts.items():
-            episode.custom_metrics[f"deck_ranks/{rank}"] = count
+        # rank_counts = {r: 0 for r in Card.RANKS}
+        # # for rank in Card.RANKS:
+        # #     count = 0
+        # for card in blind_env.G.deck.all_cards:
+        #     rank_counts[card.value] += 1
+        # for rank, count in rank_counts.items():
+        #     episode.custom_metrics[f"deck_ranks/{rank}"] = count
 
-        suit_counts = {suit: 0 for suit in Card.SUITS}
-        # for suit in Card.SUITS:
-        #     count = 0
-        for card in blind_env.G.deck.all_cards:
-            suit_counts[card.suit] += 1
-            # count += 1
-        for suit, count in suit_counts.items():
-            episode.custom_metrics[f"deck_suits/{suit}"] = count
+        # suit_counts = {suit: 0 for suit in Card.SUITS}
+        # # for suit in Card.SUITS:
+        # #     count = 0
+        # for card in blind_env.G.deck.all_cards:
+        #     suit_counts[card.suit] += 1
+        #     # count += 1
+        # for suit, count in suit_counts.items():
+        #     episode.custom_metrics[f"deck_suits/{suit}"] = count
 
-        enh_counts = {
-            enh: 0
-            for enh in BaseCard.Enhancements.ALL.values()
-            if enh != BaseCard.Enhancements.NORMAL
-        }
+        # enh_counts = {
+        #     enh: 0
+        #     for enh in BaseCard.Enhancements.ALL.values()
+        #     if enh != BaseCard.Enhancements.NORMAL
+        # }
         # for enhancement, id in BaseCard.Enhancements.ALL.items():
         #     if id == BaseCard.Enhancements.NORMAL:
         #         continue
         #     count = 0
-        for card in blind_env.G.deck.all_cards:
-            if card.enhancement in enh_counts:
-                enh_counts[card.enhancement] += 1
+        # for card in blind_env.G.deck.all_cards:
+        #     if card.enhancement in enh_counts:
+        #         enh_counts[card.enhancement] += 1
 
-        for enhancement, count in enh_counts.items():
-            episode.custom_metrics[f"deck_enhancements/{enhancement}"] = count
+        # for enhancement, count in enh_counts.items():
+        #     episode.custom_metrics[f"deck_enhancements/{enhancement}"] = count
 
-        edition_counts = {
-            edition: 0
-            for edition in BaseCard.Editions.ALL.values()
-            if edition != BaseCard.Editions.NO_EDITION
-        }
-        for card in blind_env.G.deck.all_cards:
-            if card.edition in edition_counts:
-                edition_counts[card.edition] += 1
-        for edition, count in edition_counts.items():
-            episode.custom_metrics[f"deck_editions/{edition}"] = count
+        # edition_counts = {
+        #     edition: 0
+        #     for edition in BaseCard.Editions.ALL.values()
+        #     if edition != BaseCard.Editions.NO_EDITION
+        # }
+        # for card in blind_env.G.deck.all_cards:
+        #     if card.edition in edition_counts:
+        #         edition_counts[card.edition] += 1
+        # for edition, count in edition_counts.items():
+        #     episode.custom_metrics[f"deck_editions/{edition}"] = count
         # for edition, id in BaseCard.Editions.ALL.items():
         #     if id == BaseCard.Editions.NO_EDITION:
         #         continue
@@ -204,17 +204,17 @@ class RoundLoggerCallback(DefaultCallbacks):
         #             count += 1
         #     episode.custom_metrics[f"deck_editions/{edition}"] = count
 
-        seal_counts = {
-            seal: 0
-            for seal in BaseCard.Seals.ALL.values()
-            if seal != BaseCard.Seals.NO_SEAL
-        }
-        for card in blind_env.G.deck.all_cards:
-            if card.seal in seal_counts:
-                seal_counts[card.seal] += 1
-        for seal, count in seal_counts.items():
-            episode.custom_metrics[f"deck_seals/{seal}"] = count
-        # for seal, id in BaseCard.Seals.ALL.items():
+        # seal_counts = {
+        #     seal: 0
+        #     for seal in BaseCard.Seals.ALL.values()
+        #     if seal != BaseCard.Seals.NO_SEAL
+        # }
+        # for card in blind_env.G.deck.all_cards:
+        #     if card.seal in seal_counts:
+        #         seal_counts[card.seal] += 1
+        # for seal, count in seal_counts.items():
+        #     episode.custom_metrics[f"deck_seals/{seal}"] = count
+        # # for seal, id in BaseCard.Seals.ALL.items():
         #     if id == BaseCard.Seals.NO_SEAL:
         #         continue
         #     count = 0
@@ -223,29 +223,29 @@ class RoundLoggerCallback(DefaultCallbacks):
         #             count += 1
         #     episode.custom_metrics[f"deck_seals/{seal}"] = count
 
-        episode.custom_metrics["deck_size"] = len(blind_env.G.deck.all_cards)
+        # episode.custom_metrics["deck_size"] = len(blind_env.G.deck.all_cards)
         if blind_env.hands_played_in_round_1 > 0:
             episode.custom_metrics["hands_played_in_round_1"] = (
                 blind_env.hands_played_in_round_1
             )
 
         # calculate a general metric that indicates how much the agent has homeogenized the deck by ranks and suits (separately)
-        rank_count_array = np.zeros(13, dtype=np.float32)
-        suit_count_array = np.zeros(4, dtype=np.float32)
-        for card in blind_env.G.deck.all_cards:
-            rank_count_array[card.value - 2] += 1
-            suit_count_array[Card.SUITS.index(card.suit)] += 1
-        rank_entropy = -np.sum(
-            (rank_count_array / np.sum(rank_count_array))
-            * np.log(rank_count_array / np.sum(rank_count_array) + 1e-10)
-        )
-        suit_entropy = -np.sum(
-            (suit_count_array / np.sum(suit_count_array))
-            * np.log(suit_count_array / np.sum(suit_count_array) + 1e-10)
-        )
+        # rank_count_array = np.zeros(13, dtype=np.float32)
+        # suit_count_array = np.zeros(4, dtype=np.float32)
+        # for card in blind_env.G.deck.all_cards:
+        #     rank_count_array[card.value - 2] += 1
+        #     suit_count_array[Card.SUITS.index(card.suit)] += 1
+        # rank_entropy = -np.sum(
+        #     (rank_count_array / np.sum(rank_count_array))
+        #     * np.log(rank_count_array / np.sum(rank_count_array) + 1e-10)
+        # )
+        # suit_entropy = -np.sum(
+        #     (suit_count_array / np.sum(suit_count_array))
+        #     * np.log(suit_count_array / np.sum(suit_count_array) + 1e-10)
+        # )
 
-        episode.custom_metrics["deck_rank_entropy"] = rank_entropy
-        episode.custom_metrics["deck_suit_entropy"] = suit_entropy
+        # episode.custom_metrics["deck_rank_entropy"] = rank_entropy
+        # episode.custom_metrics["deck_suit_entropy"] = suit_entropy
 
         episode.custom_metrics["hands_played"] = blind_env.hands_played
         # row["hands_played"] = blind_env.hands_played
@@ -263,16 +263,16 @@ class RoundLoggerCallback(DefaultCallbacks):
         )
 
         # Makes the null ratio 1.0, and the best ratio 2.0
-        def normalized_ratio(correct, total, null_ratio):
-            best_ratio = 1.0 / null_ratio
-            if total > 0:
-                observed_ratio = correct / total
-                ratio_score = observed_ratio / null_ratio
-                if ratio_score > 1:
-                    ratio_score = 1 + (ratio_score - 1) / (best_ratio - 1)
-                return ratio_score
-            else:
-                return 0.0
+        # def normalized_ratio(correct, total, null_ratio):
+        #     best_ratio = 1.0 / null_ratio
+        #     if total > 0:
+        #         observed_ratio = correct / total
+        #         ratio_score = observed_ratio / null_ratio
+        #         if ratio_score > 1:
+        #             ratio_score = 1 + (ratio_score - 1) / (best_ratio - 1)
+        #         return ratio_score
+        #     else:
+        #         return 0.0
 
         episode.custom_metrics["joker_count"] = len(blind_env.G.owned_jokers)
         joker_names = list(sorted([x.name for x in blind_env.G.owned_jokers]))
@@ -400,12 +400,16 @@ class RoundLoggerCallback(DefaultCallbacks):
         # for joker in blind_env.G.owned_jokers:
         #     episode.custom_metrics[f"joker_rounds/{joker.name}"] = blind_env.round
 
-        episode.custom_metrics["unique_experts"] = len(set(blind_env.expert_history))
+        # episode.custom_metrics["unique_experts"] = len(set(blind_env.expert_history))
 
         for hand_type in blind_env.G.hand_stats:
             episode.custom_metrics[f"hand_level_{hand_type}"] = blind_env.G.hand_stats[
                 hand_type
             ].get_level()
+            
+        for v_name, was_bought in shop_env.voucher_telemetry.items():
+            metric_name = f"vouchers_purchased/{v_name}"
+            episode.custom_metrics[metric_name] = was_bought
 
         # Duplicate all stats on a per-expert basis
         # active_expert = blind_env.active_expert
@@ -446,51 +450,51 @@ class RoundLoggerCallback(DefaultCallbacks):
         # 7    "Three of a Kind",
         # 8    "Two Pair",
 
-        # confusion, target_counts, hit_rates, scored_ranks, scored_suits
-        stats = algorithm.workers.foreach_worker(func=get_and_reset_stats)
-        stats = [item for sublist in stats for item in sublist]
-        # confusion = np.sum([stat[0] for stat in stats], axis=0)
-        target_counts = {hand: 0 for hand in hands}
-        hit_rates = {hand: 0 for hand in hands}
-        scored_ranks = {hand: np.zeros(13, dtype=np.float32) for hand in hands}
-        scored_suits = {hand: np.zeros(4, dtype=np.float32) for hand in hands}
-        for stat in stats:
-            for hand in hands:
-                target_counts[hand] += stat["target_counts"][hand]
-                hit_rates[hand] += stat["hit_rates"][hand]
-                scored_ranks[hand] += stat["scored_ranks"][hand]
-                scored_suits[hand] += stat["scored_suits"][hand]
-        hands_on_target = {
-            hand: (
-                hit_rates[hand] / target_counts[hand]
-                if target_counts[hand] > 0
-                else 0.0
-            )
-            for hand in hands
-        }
+        # # confusion, target_counts, hit_rates, scored_ranks, scored_suits
+        # stats = algorithm.workers.foreach_worker(func=get_and_reset_stats)
+        # stats = [item for sublist in stats for item in sublist]
+        # # confusion = np.sum([stat[0] for stat in stats], axis=0)
+        # target_counts = {hand: 0 for hand in hands}
+        # hit_rates = {hand: 0 for hand in hands}
+        # scored_ranks = {hand: np.zeros(13, dtype=np.float32) for hand in hands}
+        # scored_suits = {hand: np.zeros(4, dtype=np.float32) for hand in hands}
+        # for stat in stats:
+        #     for hand in hands:
+        #         target_counts[hand] += stat["target_counts"][hand]
+        #         hit_rates[hand] += stat["hit_rates"][hand]
+        #         scored_ranks[hand] += stat["scored_ranks"][hand]
+        #         scored_suits[hand] += stat["scored_suits"][hand]
+        # hands_on_target = {
+        #     hand: (
+        #         hit_rates[hand] / target_counts[hand]
+        #         if target_counts[hand] > 0
+        #         else 0.0
+        #     )
+        #     for hand in hands
+        # }
 
-        scored_ranks_flat = np.zeros(13, dtype=np.float32)
-        scored_suits_flat = np.zeros(4, dtype=np.float32)
-        for hand in hands:
-            scored_ranks_flat += scored_ranks[hand]
-            scored_suits_flat += scored_suits[hand]
+        # scored_ranks_flat = np.zeros(13, dtype=np.float32)
+        # scored_suits_flat = np.zeros(4, dtype=np.float32)
+        # for hand in hands:
+        #     scored_ranks_flat += scored_ranks[hand]
+        #     scored_suits_flat += scored_suits[hand]
 
-        result[ENV_RUNNER_RESULTS]["custom_metrics"]["rank_entropy"] = -np.sum(
-            (scored_ranks_flat / np.sum(scored_ranks_flat))
-            * np.log(scored_ranks_flat / np.sum(scored_ranks_flat) + 1e-10)
-        )
-        result[ENV_RUNNER_RESULTS]["custom_metrics"]["suit_entropy"] = -np.sum(
-            (scored_suits_flat / np.sum(scored_suits_flat))
-            * np.log(scored_suits_flat / np.sum(scored_suits_flat) + 1e-10)
-        )
+        # result[ENV_RUNNER_RESULTS]["custom_metrics"]["rank_entropy"] = -np.sum(
+        #     (scored_ranks_flat / np.sum(scored_ranks_flat))
+        #     * np.log(scored_ranks_flat / np.sum(scored_ranks_flat) + 1e-10)
+        # )
+        # result[ENV_RUNNER_RESULTS]["custom_metrics"]["suit_entropy"] = -np.sum(
+        #     (scored_suits_flat / np.sum(scored_suits_flat))
+        #     * np.log(scored_suits_flat / np.sum(scored_suits_flat) + 1e-10)
+        # )
 
-        total_hands = sum(target_counts.values())
-        result[ENV_RUNNER_RESULTS]["custom_metrics"]["high_low_rank_spread"] = (
-            scored_ranks_flat.max() - scored_ranks_flat.min()
-        ) / total_hands
-        result[ENV_RUNNER_RESULTS]["custom_metrics"]["high_low_suit_spread"] = (
-            scored_suits_flat.max() - scored_suits_flat.min()
-        ) / total_hands
+        # total_hands = sum(target_counts.values())
+        # result[ENV_RUNNER_RESULTS]["custom_metrics"]["high_low_rank_spread"] = (
+        #     scored_ranks_flat.max() - scored_ranks_flat.min()
+        # ) / total_hands
+        # result[ENV_RUNNER_RESULTS]["custom_metrics"]["high_low_suit_spread"] = (
+        #     scored_suits_flat.max() - scored_suits_flat.min()
+        # ) / total_hands
 
         # rank_hist = []
 
@@ -693,223 +697,223 @@ class RoundLoggerCallback(DefaultCallbacks):
         # result[ENV_RUNNER_RESULTS]["custom_metrics"]["suit_entropy"] = suit_entropy
         # result[ENV_RUNNER_RESULTS]["custom_metrics"]["rank_entropy"] = rank_entropy
 
-    def on_postprocess_trajectory(
-        self,
-        *,
-        worker,
-        episode,
-        agent_id,
-        policy_id,
-        policies,
-        postprocessed_batch,
-        original_batches,
-        **kw,
-    ):
-        if "blind" in agent_id:
-            policy = policies[policy_id]
-            infos = postprocessed_batch[SampleBatch.INFOS]
-            targets = {
-                "joker_marginal": [],
-                "joker_chips": [],
-                "joker_mult": [],
-                "joker_mult_mult": [],
-            }
-            # Use np.nan for missing values
-            for target in targets:
-                targets[target] = [
-                    info[target] if target in info else np.nan for info in infos
-                ]
-                last_info = episode.last_info_for(agent_id)
-                targets[target].append(
-                    last_info[target] if last_info and target in last_info else np.nan
-                )
-                targets[target] = targets[target][1:]
-                targets[target] = np.array(targets[target], dtype=np.float32)
+    # def on_postprocess_trajectory(
+    #     self,
+    #     *,
+    #     worker,
+    #     episode,
+    #     agent_id,
+    #     policy_id,
+    #     policies,
+    #     postprocessed_batch,
+    #     original_batches,
+    #     **kw,
+    # ):
+    #     if "blind" in agent_id:
+    #         policy = policies[policy_id]
+    #         infos = postprocessed_batch[SampleBatch.INFOS]
+    #         targets = {
+    #             "joker_marginal": [],
+    #             "joker_chips": [],
+    #             "joker_mult": [],
+    #             "joker_mult_mult": [],
+    #         }
+    #         # Use np.nan for missing values
+    #         for target in targets:
+    #             targets[target] = [
+    #                 info[target] if target in info else np.nan for info in infos
+    #             ]
+    #             last_info = episode.last_info_for(agent_id)
+    #             targets[target].append(
+    #                 last_info[target] if last_info and target in last_info else np.nan
+    #             )
+    #             targets[target] = targets[target][1:]
+    #             targets[target] = np.array(targets[target], dtype=np.float32)
 
-            # Apply scaling, but keep np.nan for missing values
-            joker_marginal = np.where(
-                np.isnan(targets["joker_marginal"]),
-                np.nan,
-                (np.log(np.maximum(targets["joker_marginal"], 1) / 100) - 1) / 3,
-            )
-            joker_chips = np.where(
-                np.isnan(targets["joker_chips"]),
-                np.nan,
-                (((targets["joker_chips"] - 200) / 100) + 1.5) * 1.2,
-            )
-            joker_mult = np.where(
-                np.isnan(targets["joker_mult"]),
-                np.nan,
-                (((targets["joker_mult"] - 60) / 30) + 1.5) * 2.0,
-            )
-            joker_mult_mult = np.where(
-                np.isnan(targets["joker_mult_mult"]),
-                np.nan,
-                (((targets["joker_mult_mult"] - 2.0) / 2) + 0.3) * 2.0,
-            )
+    #         # Apply scaling, but keep np.nan for missing values
+    #         joker_marginal = np.where(
+    #             np.isnan(targets["joker_marginal"]),
+    #             np.nan,
+    #             (np.log(np.maximum(targets["joker_marginal"], 1) / 100) - 1) / 3,
+    #         )
+    #         joker_chips = np.where(
+    #             np.isnan(targets["joker_chips"]),
+    #             np.nan,
+    #             (((targets["joker_chips"] - 200) / 100) + 1.5) * 1.2,
+    #         )
+    #         joker_mult = np.where(
+    #             np.isnan(targets["joker_mult"]),
+    #             np.nan,
+    #             (((targets["joker_mult"] - 60) / 30) + 1.5) * 2.0,
+    #         )
+    #         joker_mult_mult = np.where(
+    #             np.isnan(targets["joker_mult_mult"]),
+    #             np.nan,
+    #             (((targets["joker_mult_mult"] - 2.0) / 2) + 0.3) * 2.0,
+    #         )
 
-            targets_arr = np.stack(
-                [joker_marginal, joker_chips, joker_mult, joker_mult_mult], axis=-1
-            )
-            postprocessed_batch["joker_scores"] = targets_arr
-            return
-            # Add a curiosity bonus based on the accuracy of the predicted joker scores
-            # No idea why actions sometimes aren't included, might be an evaluation mode bug?
-            if (
-                "hand_scores_aux_output" in postprocessed_batch
-                and "actions" in postprocessed_batch
-            ):
-                batch = postprocessed_batch
-                # print(batch)
-                # print(agent_id)
-                rewards = batch["rewards"]
-                actions = batch[SampleBatch.ACTIONS]
-                preds = batch["hand_scores_aux_output"]
-                true_scores = batch["joker_scores"]
-                has_jokers = batch["has_jokers"].astype(bool)
+    #         targets_arr = np.stack(
+    #             [joker_marginal, joker_chips, joker_mult, joker_mult_mult], axis=-1
+    #         )
+    #         postprocessed_batch["joker_scores"] = targets_arr
+    #         return
+    #         # Add a curiosity bonus based on the accuracy of the predicted joker scores
+    #         # No idea why actions sometimes aren't included, might be an evaluation mode bug?
+    #         if (
+    #             "hand_scores_aux_output" in postprocessed_batch
+    #             and "actions" in postprocessed_batch
+    #         ):
+    #             batch = postprocessed_batch
+    #             # print(batch)
+    #             # print(agent_id)
+    #             rewards = batch["rewards"]
+    #             actions = batch[SampleBatch.ACTIONS]
+    #             preds = batch["hand_scores_aux_output"]
+    #             true_scores = batch["joker_scores"]
+    #             has_jokers = batch["has_jokers"].astype(bool)
 
-                num_aux = preds.shape[1]
-                method = policy.config["model"]["custom_model_config"]["action_method"]
-                if method == "subset_attention":
-                    is_play = actions < num_aux
-                elif method == "dual_subset":
-                    actions = actions[:, 0]  # only care about the play action
-                    is_play = actions > 0
-                else:
-                    raise ValueError(f"Unknown action_method {method}")
+    #             num_aux = preds.shape[1]
+    #             method = policy.config["model"]["custom_model_config"]["action_method"]
+    #             if method == "subset_attention":
+    #                 is_play = actions < num_aux
+    #             elif method == "dual_subset":
+    #                 actions = actions[:, 0]  # only care about the play action
+    #                 is_play = actions > 0
+    #             else:
+    #                 raise ValueError(f"Unknown action_method {method}")
 
-                valid = is_play & has_jokers & (~np.isnan(true_scores).any(axis=1))
+    #             valid = is_play & has_jokers & (~np.isnan(true_scores).any(axis=1))
 
-                if not valid.any():
-                    # print("No valid curiosity steps found, skipping curiosity bonus.")
-                    return
+    #             if not valid.any():
+    #                 # print("No valid curiosity steps found, skipping curiosity bonus.")
+    #                 return
 
-                chosen_preds = preds[valid, actions[valid], :]
-                chosen_true = true_scores[valid, :]
-                with torch.no_grad():
-                    errs = np.mean((chosen_preds - chosen_true) ** 2, axis=1)
-                    errs = np.clip(errs, 0.0, 3.0)
-                    bonus = 0.3 * errs
-                    # print(f"Blind curiosity bonus: {bonus.mean():.4f} ± {bonus.std():.4f}")
-                    # rewards[valid] += bonus
-                    # batch["blind_curiosity_bonus"] = bonus # This breaks something idk why
-                    # batch["rewards"] = rewards
-                    postprocessed_batch["advantages"][valid] += bonus
+    #             chosen_preds = preds[valid, actions[valid], :]
+    #             chosen_true = true_scores[valid, :]
+    #             with torch.no_grad():
+    #                 errs = np.mean((chosen_preds - chosen_true) ** 2, axis=1)
+    #                 errs = np.clip(errs, 0.0, 3.0)
+    #                 bonus = 0.3 * errs
+    #                 # print(f"Blind curiosity bonus: {bonus.mean():.4f} ± {bonus.std():.4f}")
+    #                 # rewards[valid] += bonus
+    #                 # batch["blind_curiosity_bonus"] = bonus # This breaks something idk why
+    #                 # batch["rewards"] = rewards
+    #                 postprocessed_batch["advantages"][valid] += bonus
 
-                # done = batch[SampleBatch.DONES][-1]
-                # last_val = 0.0 if done else batch[SampleBatch.VF_PREDS][-1]
-                # new_batch = compute_gae_for_sample_batch(
-                #     policy=policy,
-                #     sample_batch=batch,
-                #     episode=episode,
-                # )
-                # postprocessed_batch["advantages"] = new_batch["advantages"]
-                # postprocessed_batch["value_targets"] = new_batch["value_targets"]
+    #             # done = batch[SampleBatch.DONES][-1]
+    #             # last_val = 0.0 if done else batch[SampleBatch.VF_PREDS][-1]
+    #             # new_batch = compute_gae_for_sample_batch(
+    #             #     policy=policy,
+    #             #     sample_batch=batch,
+    #             #     episode=episode,
+    #             # )
+    #             # postprocessed_batch["advantages"] = new_batch["advantages"]
+    #             # postprocessed_batch["value_targets"] = new_batch["value_targets"]
 
-        elif "shop" in agent_id:
-            return
-            # Add a curiosity bonus based on the rarity of the "build" when the shop is ended
-            policy = policies[policy_id]
-            infos = postprocessed_batch[SampleBatch.INFOS]
-            targets = {
-                "shop_ended": [],
-                "owned_joker_ids": [],
-            }
+    #     elif "shop" in agent_id:
+    #         return
+    #         # Add a curiosity bonus based on the rarity of the "build" when the shop is ended
+    #         policy = policies[policy_id]
+    #         infos = postprocessed_batch[SampleBatch.INFOS]
+    #         targets = {
+    #             "shop_ended": [],
+    #             "owned_joker_ids": [],
+    #         }
 
-            for target in targets:
-                targets[target] = [
-                    info[target] if target in info else np.nan for info in infos
-                ]
-                last_info = episode.last_info_for(agent_id)
-                targets[target].append(
-                    last_info[target] if last_info and target in last_info else np.nan
-                )
-                targets[target] = targets[target][1:]
+    #         for target in targets:
+    #             targets[target] = [
+    #                 info[target] if target in info else np.nan for info in infos
+    #             ]
+    #             last_info = episode.last_info_for(agent_id)
+    #             targets[target].append(
+    #                 last_info[target] if last_info and target in last_info else np.nan
+    #             )
+    #             targets[target] = targets[target][1:]
 
-            shop_ended = targets["shop_ended"]
-            owned_joker_ids = targets["owned_joker_ids"]
-            rewards = postprocessed_batch["rewards"]
+    #         shop_ended = targets["shop_ended"]
+    #         owned_joker_ids = targets["owned_joker_ids"]
+    #         rewards = postprocessed_batch["rewards"]
 
-            all_bonuses = []
-            single_episode_counts = Counter()
-            for i in range(len(shop_ended)):
-                all_bonuses.append(0.0)
-                if np.isnan(shop_ended[i]):
-                    continue
-                shop_ended[i] = bool(shop_ended[i])
+    #         all_bonuses = []
+    #         single_episode_counts = Counter()
+    #         for i in range(len(shop_ended)):
+    #             all_bonuses.append(0.0)
+    #             if np.isnan(shop_ended[i]):
+    #                 continue
+    #             shop_ended[i] = bool(shop_ended[i])
 
-                if not shop_ended[i]:
-                    continue
+    #             if not shop_ended[i]:
+    #                 continue
 
-                if (
-                    type(owned_joker_ids[i]) is not list
-                    and np.isnan(owned_joker_ids[i]).any()
-                ):
-                    continue
+    #             if (
+    #                 type(owned_joker_ids[i]) is not list
+    #                 and np.isnan(owned_joker_ids[i]).any()
+    #             ):
+    #                 continue
 
-                bonus = 0.0
-                for j in owned_joker_ids[i]:
-                    if np.isnan(j):
-                        continue
-                    self.shop_joker_counts[j] += 1
-                    single_episode_counts[j] += 1
-                    # Calculate rarity score as ratio of count to most common
-                    rarity_score = 1 - self.shop_joker_counts[j] / max(
-                        self.shop_joker_counts.values()
-                    )
-                    # bonus += 1 / (self.shop_joker_counts[j] ** 0.25)
-                    # bonus += rarity_score / (single_episode_counts[j] ** 0.5)
-                    bonus += rarity_score
-                    # if (
-                    #     j == 46 + BaseCard.FIRST_JOKER_INDEX - 1
-                    # ):  # Egg curiosity for testing
-                    #     bonus += 10
-                all_bonuses[i] = bonus * 2.0
-                # rewards[i] += bonus * 1.0
+    #             bonus = 0.0
+    #             for j in owned_joker_ids[i]:
+    #                 if np.isnan(j):
+    #                     continue
+    #                 self.shop_joker_counts[j] += 1
+    #                 single_episode_counts[j] += 1
+    #                 # Calculate rarity score as ratio of count to most common
+    #                 rarity_score = 1 - self.shop_joker_counts[j] / max(
+    #                     self.shop_joker_counts.values()
+    #                 )
+    #                 # bonus += 1 / (self.shop_joker_counts[j] ** 0.25)
+    #                 # bonus += rarity_score / (single_episode_counts[j] ** 0.5)
+    #                 bonus += rarity_score
+    #                 # if (
+    #                 #     j == 46 + BaseCard.FIRST_JOKER_INDEX - 1
+    #                 # ):  # Egg curiosity for testing
+    #                 #     bonus += 10
+    #             all_bonuses[i] = bonus * 2.0
+    #             # rewards[i] += bonus * 1.0
 
-            # for i in range(len(postprocessed_batch["advantages"])):
-            #     postprocessed_batch["advantages"][i] += all_bonuses[i]
+    #         # for i in range(len(postprocessed_batch["advantages"])):
+    #         #     postprocessed_batch["advantages"][i] += all_bonuses[i]
 
-            # curiosity_rewards = np.array(all_bonuses, dtype=np.float32)
-            # curiosity_dones = np.array(shop_ended, dtype=np.bool_)
-            # curiosity_batch = SampleBatch(
-            #     {
-            #         **postprocessed_batch,
-            #         SampleBatch.REWARDS: curiosity_rewards,
-            #         SampleBatch.DONES: curiosity_dones,
-            #     }
-            # )
-            # with torch.no_grad():
-            #     curiosity_batch = compute_gae_for_sample_batch(
-            #         policy=policy,
-            #         sample_batch=curiosity_batch,
-            #         episode=episode,
-            #     )
-            # postprocessed_batch["advantages"] += curiosity_batch["advantages"]
-            # postprocessed_batch["value_targets"] += curiosity_batch["value_targets"]
+    #         # curiosity_rewards = np.array(all_bonuses, dtype=np.float32)
+    #         # curiosity_dones = np.array(shop_ended, dtype=np.bool_)
+    #         # curiosity_batch = SampleBatch(
+    #         #     {
+    #         #         **postprocessed_batch,
+    #         #         SampleBatch.REWARDS: curiosity_rewards,
+    #         #         SampleBatch.DONES: curiosity_dones,
+    #         #     }
+    #         # )
+    #         # with torch.no_grad():
+    #         #     curiosity_batch = compute_gae_for_sample_batch(
+    #         #         policy=policy,
+    #         #         sample_batch=curiosity_batch,
+    #         #         episode=episode,
+    #         #     )
+    #         # postprocessed_batch["advantages"] += curiosity_batch["advantages"]
+    #         # postprocessed_batch["value_targets"] += curiosity_batch["value_targets"]
 
-            # curiosity_batch["rewards"] += curiosity_rewards
+    #         # curiosity_batch["rewards"] += curiosity_rewards
 
-            # old_gamma = policy.config["gamma"]
-            # old_lambda = policy.config["lambda"]
-            # policy.config["gamma"] = 0.0
-            # policy.config["lambda"] = 1.0
-            # curiosity_batch = compute_gae_for_sample_batch(
-            #     policy=policy,
-            #     sample_batch=curiosity_batch,
-            #     episode=episode,
-            # )
-            # policy.config["gamma"] = old_gamma
-            # policy.config["lambda"] = old_lambda
+    #         # old_gamma = policy.config["gamma"]
+    #         # old_lambda = policy.config["lambda"]
+    #         # policy.config["gamma"] = 0.0
+    #         # policy.config["lambda"] = 1.0
+    #         # curiosity_batch = compute_gae_for_sample_batch(
+    #         #     policy=policy,
+    #         #     sample_batch=curiosity_batch,
+    #         #     episode=episode,
+    #         # )
+    #         # policy.config["gamma"] = old_gamma
+    #         # policy.config["lambda"] = old_lambda
 
-            # if len(all_bonuses) > 0:
-            #     print(
-            #         f"Shop curiosity bonuses: {sum(all_bonuses)/len(all_bonuses):.4f} ± {np.std(all_bonuses):.4f}"
-            #     )
+    #         # if len(all_bonuses) > 0:
+    #         #     print(
+    #         #         f"Shop curiosity bonuses: {sum(all_bonuses)/len(all_bonuses):.4f} ± {np.std(all_bonuses):.4f}"
+    #         #     )
 
-            # new_batch = compute_gae_for_sample_batch(
-            #     policy=policy, sample_batch=postprocessed_batch, episode=episode
-            # )
+    #         # new_batch = compute_gae_for_sample_batch(
+    #         #     policy=policy, sample_batch=postprocessed_batch, episode=episode
+    #         # )
 
-            # postprocessed_batch["advantages"] = new_batch["advantages"]
-            # postprocessed_batch["value_targets"] = new_batch["value_targets"]
+    #         # postprocessed_batch["advantages"] = new_batch["advantages"]
+    #         # postprocessed_batch["value_targets"] = new_batch["value_targets"]

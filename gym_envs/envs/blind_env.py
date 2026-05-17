@@ -37,8 +37,8 @@ class BlindEnv(gym.Env):
         self.incorrect_penalty = env_config.get("incorrect_penalty", 0.0)
         self.discard_penalty = env_config.get("discard_penalty", 0.0)
         self.rarity_bonus = env_config.get("rarity_bonus", 0.0)
-        self.action_mode = env_config.get("action_mode", "combo_index")
-        self.hand_mode = env_config.get("hand_mode", "indices")
+        self.action_mode = env_config.get("action_mode", "ar_custom_dist")
+        self.hand_mode = env_config.get("hand_mode", "base_card")
         self.deck_obs = env_config.get("deck_obs", False)
         self.force_play = env_config.get("force_play", True)
         self.hand_level_randomization = env_config.get(
@@ -65,6 +65,7 @@ class BlindEnv(gym.Env):
         self.discard_count_counts = {i: 0 for i in range(0, 6)}
         self.hands_played = 0
         self.discards_played = 0
+        self.discards_played_this_blind = 0
         self.confusion_matrix = np.zeros((9, 9), dtype=np.float32)
         self.rarities = {hand: 0 for hand in self.hands}
         self.scored_ranks = {
@@ -78,8 +79,6 @@ class BlindEnv(gym.Env):
         self.reward_range = (-float("inf"), float("inf"))
 
         self.objective_mode = env_config.get("objective_mode", "max_chips")
-        self.max_discards = 3
-        self.max_plays = 5
         self.chips_reward_weight = env_config.get("chips_reward_weight", 0.0)
         self.hand_type_reward_weight = env_config.get("hand_type_reward_weight", 0.0)
         self.target_hand_obs = env_config.get("target_hand_obs", False)
@@ -93,7 +92,6 @@ class BlindEnv(gym.Env):
         self.imagined_trajectories = env_config.get("imagined_trajectories", False)
         self.discard_potential_reward = env_config.get("discard_potential_reward", 0.0)
         self.joker_synergy_bonus = env_config.get("joker_synergy_bonus", 0.0)
-        self.flattened_rank_chips = env_config.get("flattened_rank_chips", False)
         self.deck_counts_obs = env_config.get("deck_counts_obs", False)
         self.hand_level_range = env_config.get("hand_level_range", (1, 1))
 
@@ -235,6 +233,7 @@ class BlindEnv(gym.Env):
 
         if action[0] == Actions.DISCARD_HAND:
             self.discards_played += 1
+            self.discards_played_this_blind += 1
             self.discards_left -= 1
             self.discard_count_counts[len(played_hand)] += 1
 
@@ -249,9 +248,19 @@ class BlindEnv(gym.Env):
 
             effects = joker_discard_effects(self.G.owned_jokers, played_hand)
             
-            hand_type, _ = played_hand.evaluate()
+            four_finger_joker = any(
+                joker.name == "Four Fingers" for joker in self.G.owned_jokers
+            )
+            smeared = any(
+                joker.name == "Smeared Joker" for joker in self.G.owned_jokers
+            )
+            hand_type, _ = played_hand.evaluate(
+                allow_4_flush=four_finger_joker,
+                allow_4_straight=four_finger_joker,
+                smeared=smeared
+            )
             
-            if self.discards_played == 1:
+            if self.discards_played_this_blind == 1:
                 for joker in self.G.owned_jokers:
                     if joker.name == "Burnt Joker":
                         self.G.hand_stats[hand_type].add_level(1)
@@ -277,7 +286,10 @@ class BlindEnv(gym.Env):
             if self.round == 1:
                 self.hands_played_in_round_1 += 1
             self.hands_left -= 1
-                
+            
+            if self.G.current_blind.name == "The Tooth":
+                self.G.dollars = max(0, self.G.dollars - len(played_hand))
+            
             play_result = self.determine_play_hand_outcome(played_hand)
             
             self.unique_hand_types_this_blind.add(play_result["hand_type"])
@@ -307,7 +319,7 @@ class BlindEnv(gym.Env):
                         ]
                     
                     play_result["reward"] += (
-                        0.1 + self.hands_left * 0.01
+                        0.1 # + self.hands_left * 0.01
                     )
                     
                     # Hand Type Wheel
@@ -458,12 +470,8 @@ class BlindEnv(gym.Env):
                 self.active_expert = randint(0, self.num_experts - 1)
 
         self.chips = 0
-        if isinstance(self.max_plays, dict):
-            self.hands_left = self.max_plays[self.target_hand_type]
-            self.discards_left = self.max_discards[self.target_hand_type]
-        else:
-            self.hands_left = self.max_plays
-            self.discards_left = self.max_discards
+        self.hands_left = self.G.max_plays
+        self.discards_left = self.G.max_discards
 
         self.slots_discarded = np.zeros(0, dtype=np.float32)
         self.slots_played = np.zeros(0, dtype=np.float32)

@@ -68,16 +68,7 @@ class BlindObservationHelper:
         deck_relation_counts = sp.Box(low=0, high=52, shape=(52 - 8,), dtype=np.float32)
 
         space: Dict[str, sp.Space] = {}
-        if self.hand_mode == "indices":
-            space["hand_indices"] = hand_indices
-        elif self.hand_mode == "suits_ranks":
-            space["hand_suits"] = hand_suits
-            space["hand_ranks"] = hand_ranks
-        elif self.hand_mode == "suits_ranks_w_ordinal":
-            space["hand_suits"] = hand_suits
-            space["hand_ranks"] = hand_ranks
-            space["hand_rank_ordinals"] = hand_ranks_ordinal
-        elif self.hand_mode == "base_card":
+        if self.hand_mode == "base_card":
             space["hand"] = BaseCard.observation_space(self.G.max_hand_size)
         if self.deck_obs:
             space["deck_indices"] = deck_indices
@@ -162,35 +153,15 @@ class BlindObservationHelper:
         if self.contained_hand_types_obs:
             obs["available_hand_types"] = available_hands
 
-        if self.hand_mode == "indices":
-            obs["hand_indices"] = np.array(
-                [card.index() for card in self.G.hand]
-                + [52] * (self.G.max_hand_size - len(self.G.hand)),
-                dtype=np.int32,
-            )
-        elif self.hand_mode == "suits_ranks":
-            obs["hand_suits"] = np.array(
-                [card.suit_index() for card in self.G.hand], dtype=np.int8
-            )
-            obs["hand_ranks"] = np.array(
-                [card.value - 2 for card in self.G.hand], dtype=np.int8
-            )
-        elif self.hand_mode == "suits_ranks_w_ordinal":
-            obs["hand_suits"] = np.array(
-                [card.suit_index() for card in self.G.hand], dtype=np.int8
-            )
-            obs["hand_ranks"] = np.array(
-                [card.value - 2 for card in self.G.hand], dtype=np.int8
-            )
-            obs["hand_rank_ordinals"] = np.array(
-                [card.value - 2 for card in self.G.hand], dtype=np.int8
-            )
-        elif self.hand_mode == "base_card":
+        if self.hand_mode == "base_card":
             obs["hand"] = BaseCard.observe_list(
                 self.G.hand,
                 self.G.max_hand_size,
                 override_segment=BaseCard.Segments.HAND,
             )
+            if self.G.current_blind.name == "Verdant Leaf":
+                for i, card in enumerate(self.G.hand):
+                    obs["hand"]["debuffed"][i] = 1
 
         if self.deck_obs:
             obs["deck_indices"] = np.array(

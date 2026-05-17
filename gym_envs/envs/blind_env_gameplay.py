@@ -75,11 +75,18 @@ class BlindGameplayHelper:
         four_finger_joker = any(
             joker.name == "Four Fingers" for joker in self.G.owned_jokers
         )
+        smeared = any(
+            joker.name == "Smeared Joker" for joker in self.G.owned_jokers
+        )
         hand_type, scored_cards = played_hand.evaluate(
             allow_4_flush=four_finger_joker,
             allow_4_straight=four_finger_joker,
+            smeared=smeared
         )
-
+        
+        if self.G.current_blind.name == "The Ox":
+            if hand_type == self.G.most_played_hand_name:
+                self.G.dollars = 0
         if self.G.current_blind.name == "The Eye":
             if self.G.hand_stats[hand_type].played_this_blind:
                 return no_op_result
@@ -94,7 +101,6 @@ class BlindGameplayHelper:
                 self.G.hand_stats[hand_type].add_level(-1)
 
         self.G.hand_stats[hand_type].play_count += 1
-        self.G.hand_stats[hand_type].played_this_blind = True
 
         splash = any(joker.name == "Splash" for joker in self.G.owned_jokers)
         if splash:
@@ -108,83 +114,85 @@ class BlindGameplayHelper:
             chips = max(int(chips / 2), 1)
             mult = max(int(mult / 2), 1)
 
-        if self.flattened_rank_chips:
-            chips += 7 * len(scored_cards)
-        else:
-            chips += sum([card.chip_value() for card in scored_cards])
-        chips += sum(
-            50 if card.enhancement == BaseCard.Enhancements.STONE else 0
-            for card in played_hand.cards
-        )
-        chips += sum(
-            (
-                50
-                if card.enhancement == BaseCard.Enhancements.STONE
-                and card.seal == BaseCard.Seals.RED
-                else 0
+        for card in scored_cards:
+            if self.G.current_blind.name != "Verdant Leaf":
+                chips += card.chip_value()
+        
+        if self.G.current_blind.name != "Verdant Leaf":
+            chips += sum(
+                50 if card.enhancement == BaseCard.Enhancements.STONE else 0
+                for card in played_hand.cards
             )
-            for card in played_hand.cards
-        )
-        pre_joker_score = chips * mult
+            chips += sum(
+                (
+                    50
+                    if card.enhancement == BaseCard.Enhancements.STONE
+                    and card.seal == BaseCard.Seals.RED
+                    else 0
+                )
+                for card in played_hand.cards
+            )
 
         scored_cards.cards = self.G.current_blind.filter_scored_cards(
             scored_cards.cards
         )
         aggregate_joker_effects = {"chips": 0, "mult": 0, "mult_mult": 1.0}
         for card in scored_cards.cards:
-            if card.enhancement == BaseCard.Enhancements.BONUS:
-                chips += 30
-            elif card.enhancement == BaseCard.Enhancements.MULT:
-                mult += 4
-            elif card.enhancement == BaseCard.Enhancements.GLASS:
-                mult *= 2
-                if random() < 0.25:
-                    self.G.destroy_card(card)
+            if self.G.current_blind.name != "Verdant Leaf":
+                if card.enhancement == BaseCard.Enhancements.BONUS:
+                    chips += 30
+                elif card.enhancement == BaseCard.Enhancements.MULT:
+                    mult += 4
+                elif card.enhancement == BaseCard.Enhancements.GLASS:
+                    mult *= 2
+                    if random() < 0.25:
+                        self.G.destroy_card(card)
+                        for j in self.G.owned_jokers:
+                            if j.name == "Glass Joker":
+                                j.state["mult_mult"] += 0.75
+                elif card.enhancement == BaseCard.Enhancements.LUCKY:
+                    triggers = 0
+                    if random() < 0.20:
+                        mult += 20
+                        triggers += 1
+                    if random() < 0.067:
+                        self.G.dollars += 20
+                        triggers += 1
+
                     for j in self.G.owned_jokers:
-                        if j.name == "Glass Joker":
-                            j.state["mult_mult"] += 0.75
-            elif card.enhancement == BaseCard.Enhancements.LUCKY:
-                triggers = 0
-                if random() < 0.20:
-                    mult += 20
-                    triggers += 1
-                if random() < 0.067:
-                    self.G.dollars += 20
-                    triggers += 1
+                        if j.name == "Lucky Cat":
+                            j.state["mult_mult"] += 0.25 * triggers
 
-                for j in self.G.owned_jokers:
-                    if j.name == "Lucky Cat":
-                        j.state["mult_mult"] += 0.25 * triggers
+                if card.edition == BaseCard.Editions.FOIL:
+                    chips += 50
+                elif card.edition == BaseCard.Editions.HOLOGRAPHIC:
+                    mult += 10
+                elif card.edition == BaseCard.Editions.POLYCHROME:
+                    mult *= 1.5
 
-            if card.edition == BaseCard.Editions.FOIL:
-                chips += 50
-            elif card.edition == BaseCard.Editions.HOLOGRAPHIC:
-                mult += 10
-            elif card.edition == BaseCard.Editions.POLYCHROME:
-                mult *= 1.5
+                effects = joker_card_score_effects(self.G.owned_jokers, card, self.G)
+                # reward += effects["synergy"] * 0.001
+                aggregate_joker_effects["chips"] += effects["chips"]
+                aggregate_joker_effects["mult"] += effects["mult"]
+                aggregate_joker_effects["mult_mult"] *= effects["mult_mult"]
+                if card.seal == BaseCard.Seals.GOLD:
+                    self.G.dollars += 3
+                elif card.seal == BaseCard.Seals.RED:
+                    chips += card.chip_value()
+                    effects["chips"] *= 2
+                    effects["mult"] *= 2
+                    effects["mult_mult"] = effects["mult_mult"] ** 2
 
-            effects = joker_card_score_effects(self.G.owned_jokers, card, self.G)
-            # reward += effects["synergy"] * 0.001
-            aggregate_joker_effects["chips"] += effects["chips"]
-            aggregate_joker_effects["mult"] += effects["mult"]
-            aggregate_joker_effects["mult_mult"] *= effects["mult_mult"]
-            if card.seal == BaseCard.Seals.GOLD:
-                self.G.dollars += 3
-            elif card.seal == BaseCard.Seals.RED:
-                chips += card.chip_value()
-                effects["chips"] *= 2
-                effects["mult"] *= 2
-                effects["mult_mult"] = effects["mult_mult"] ** 2
-
-            self.handle_callbacks(effects["callbacks"])
-            chips += effects["chips"]
-            mult += effects["mult"]
-            mult *= effects["mult_mult"]
+                self.handle_callbacks(effects["callbacks"])
+                chips += effects["chips"]
+                mult += effects["mult"]
+                mult *= effects["mult_mult"]
 
         for card in self.G.hand.cards:
-            if card.enhancement == BaseCard.Enhancements.STEEL:
-                mult *= 1.5
-
+            if self.G.current_blind.name != "Verdant Leaf":
+                if card.enhancement == BaseCard.Enhancements.STEEL:
+                    mult *= 1.5
+        
         effects = joker_triggered_effects(
             self.G.owned_jokers,
             played_hand,
@@ -207,14 +215,14 @@ class BlindGameplayHelper:
         aggregate_joker_effects["mult"] += effects["mult"]
         aggregate_joker_effects["mult_mult"] *= effects["mult_mult"]
 
-        post_joker_score = chips * mult
+        self.G.hand_stats[hand_type].played_this_blind = True
         
-        joker_marginal = post_joker_score - pre_joker_score
+        post_joker_score = chips * mult
 
-        if self.objective_mode == "blind_grind":
-            safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
-            safe_score = np.clip(safe_score, 0.0, 1e18)
-            reward += np.log10(safe_score + 1) * 0.001
+        # if self.objective_mode == "blind_grind":
+        #    safe_score = np.nan_to_num(post_joker_score, nan=0.0, posinf=1e18, neginf=0.0)
+        #    safe_score = np.clip(safe_score, 0.0, 1e18)
+        #    reward += np.log10(safe_score + 1) * 0.001
         
         # Flush Wheel
         # if hand_type in ["Flush", "Straight Flush"]:
@@ -245,8 +253,6 @@ class BlindGameplayHelper:
             "scored_cards": scored_cards,
             "suit_counts": suit_counts,
             "hand_score": post_joker_score,
-            "pre_joker_score": pre_joker_score,
-            "joker_marginal": joker_marginal,
             "joker_chips": aggregate_joker_effects["chips"],
             "joker_mult": aggregate_joker_effects["mult"],
             "joker_mult_mult": aggregate_joker_effects["mult_mult"],
@@ -275,17 +281,11 @@ class BlindGameplayHelper:
         self.count_counts[len(played_cards)] += 1
 
     def draw_cards(self):
-        if self.objective_mode == "one_hand_easy":
-            hand_i = randint(0, len(self.hands) - 1)
-            self.active_expert = hand_i
-            hand_type = self.hands[hand_i]
-            self.easy_hand_type = hand_type
-            self.G.hand = Hand.random(hand_type, self.G.max_hand_size)
-            self.G.hand.shuffle()
-            return
-
         starting_size = len(self.G.hand)
-        while len(self.G.hand) < self.G.current_hand_size:
+        hand_limit = self.G.current_hand_size
+        if self.G.current_blind.name == "The Serpent":
+            hand_limit = min(len(self.G.hand) + 3, 10)
+        while len(self.G.hand) < hand_limit:
             if not self.infinite_deck:
                 if len(self.G.deck.remaining_cards) == 0:
                     break
@@ -383,8 +383,9 @@ class BlindGameplayHelper:
         self.chips = 0
         self.reset_hand_watermarks()
 
-        self.hands_left = self.max_plays
-        self.discards_left = self.max_discards
+        self.hands_left = self.G.max_plays
+        self.discards_left = self.G.max_discards
+        self.discards_played_this_blind = 0
 
         if self.G.current_blind.name == "The Water":
             self.discards_left = 0

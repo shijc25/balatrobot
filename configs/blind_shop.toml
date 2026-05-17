@@ -58,7 +58,7 @@ num_envs_per_env_runner = 20
 sample_timeout_s = 360
 
 [ppo_overrides.blind_shop.training]
-train_batch_size = 393216
-sgd_minibatch_size = 1024
+train_batch_size = 524288
+sgd_minibatch_size = 4096
 num_sgd_iter = 1
-lr = 0.0001
+lr = 0.0002

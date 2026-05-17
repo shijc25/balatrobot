@@ -18,7 +18,7 @@ from gym_envs.components.hand import Hand
 from gym_envs.components.tarot import TarotCard
 from gym_envs.blind import Blind
 from gym_envs.shared_gamestate import SharedGamestate
-
+import random
 
 class ShopEnv(gym.Env):
     metadata = {"label": "ShopEnv-v0"}
@@ -63,25 +63,53 @@ class ShopEnv(gym.Env):
         
         self.in_pack_selection = False
         self.num_booster_contents = 5
+        
+        self.all_vouchers = ["Overstock", "Overstock Plus", "Clearance Sale", "Liquidation", "Hone", "Glow Up", "Reroll Surplus", "Reroll Glut", "Grabber", "Nacho Tong", "Wasteful", "Recyclomancy", "Seed Money", "Money Tree", "Paint Brush", "Palette", "Telescope"]
+        self.voucher_chains = {
+            "Overstock": "Overstock Plus",
+            "Clearance Sale": "Liquidation",
+            "Hone": "Glow Up",
+            "Reroll Surplus": "Reroll Glut",
+            "Grabber": "Nacho Tong",
+            "Wasteful": "Recyclomancy",
+            "Seed Money": "Money Tree",
+            "Paint Brush": "Palette",
+            "Telescope": None,
+        }
 
     def get_obs(self):
         self.enforce_segments()
         
-        shop_prices = np.full(2, 999.0, dtype=np.float32)
+        voucher_id = 0
+        if self.current_voucher:
+            voucher_id = self.all_vouchers.index(self.current_voucher) + 1
+        
+        owned_mask = np.zeros(17, dtype=np.float32)
+        for i, v_name in enumerate(self.all_vouchers):
+            if v_name in self.G.owned_vouchers:
+                owned_mask[i] = 1
+        
+        discount = 1.0
+        if "Clearance Sale" in self.G.owned_vouchers:
+            discount = 0.75
+        if "Liquidation" in self.G.owned_vouchers:
+            discount = 0.5
+        
+        shop_prices = np.full(4, 999.0, dtype=np.float32)
         for i, j in enumerate(self.shop_jokers):
-            if hasattr(j, 'value'): shop_prices[i] = j.value
+            if hasattr(j, 'value'): shop_prices[i] = int(j.value * discount)
 
         booster_prices = np.full(2, 999.0, dtype=np.float32)
         for i, b in enumerate(self.boosters):
-            if hasattr(b, 'value'): booster_prices[i] = b.value
+            if hasattr(b, 'value'): booster_prices[i] = int(b.value * discount)
         
-        is_joker_on_shelf = np.zeros(2, dtype=np.bool_)
-        is_planet_on_shelf = np.zeros(2, dtype=np.bool_)
+        is_joker_on_shelf = np.zeros(4, dtype=np.bool_)
+        is_planet_on_shelf = np.zeros(4, dtype=np.bool_)
         is_buffoon_pack = np.zeros(2, dtype=np.bool_)
         is_celestial_pack = np.zeros(2, dtype=np.bool_)
         
         for i, j in enumerate(self.shop_jokers):
-            if i < 2:
+            if i < 4:
                 is_joker_on_shelf[i] = isinstance(j, Joker)
                 is_planet_on_shelf[i] = isinstance(j, PlanetCard)
         
@@ -145,12 +173,16 @@ class ShopEnv(gym.Env):
             "deck_stats": deck_stats,
             "owned_joker_count": np.array([len(self.G.owned_jokers)], dtype=np.float32),
             
+            "shelf_voucher": np.array([voucher_id], dtype=np.int32),
+            "owned_vouchers": owned_mask,
+            "voucher_price": np.array([self.voucher_price], dtype=np.float32),
             "reroll_price": np.array([self.reroll_cost], dtype=np.float32),
+            "reroll_count": np.array([self.reroll_count], dtype=np.float32),
             "shop_prices": shop_prices,
             "booster_prices": booster_prices,
             "goal": np.array([self.next_blind.chip_goal], dtype=np.float32),
             "hand_stats": HandType.observe_stats(self.G.hand_stats),
-            "shop_cards": BaseCard.observe_list(self.shop_jokers, 2),
+            "shop_cards": BaseCard.observe_list(self.shop_jokers, 4),
             "booster_cards": BaseCard.observe_list(self.boosters, 2),
             "owned_jokers": BaseCard.observe_list(self.G.owned_jokers, 5),
             "pack_cards": pack_cards_obs,
@@ -173,15 +205,20 @@ class ShopEnv(gym.Env):
         }
 
     def build_observation_space(self):
-        bool_space_2 = sp.Box(0, 1, (2,), dtype=np.int8)
-        bool_space_5 = sp.Box(0, 1, (5,), dtype=np.int8)
         bool_space_1 = sp.Box(0, 1, (1,), dtype=np.int8)
+        bool_space_2 = sp.Box(0, 1, (2,), dtype=np.int8)
+        bool_space_4 = sp.Box(0, 1, (4,), dtype=np.int8)
+        bool_space_5 = sp.Box(0, 1, (5,), dtype=np.int8)
         
         return sp.Dict(
             {
                 "dollars": sp.Box(low=self.min_dollars, high=self.max_dollars, shape=(1,), dtype=np.float32),
+                "shelf_voucher": sp.Box(0, 1000, shape=(1,), dtype=np.int32),
+                "owned_vouchers": sp.Box(0, 1000, shape=(17,), dtype=np.float32),
+                "voucher_price": sp.Box(0, 1000, shape=(1,), dtype=np.float32),
                 "reroll_price": sp.Box(0, 1000, shape=(1,), dtype=np.float32),
-                "shop_prices": sp.Box(0, 1000, shape=(2,), dtype=np.float32),
+                "reroll_count": sp.Box(0, 1000, shape=(1,), dtype=np.float32),
+                "shop_prices": sp.Box(0, 1000, shape=(4,), dtype=np.float32),
                 "booster_prices": sp.Box(0, 1000, shape=(2,), dtype=np.float32),
                 "owned_joker_count": sp.Box(0, 20, shape=(1,), dtype=np.float32),
                 "goal": sp.Box(0, 1e18, shape=(1,), dtype=np.float32),
@@ -189,8 +226,8 @@ class ShopEnv(gym.Env):
                 "hand_stats": HandType.stats_obs_space(),
                 "deck_stats": sp.Box(low=-200, high=200, shape=(37,), dtype=np.float32),
                 
-                "is_joker_on_shelf": bool_space_2,
-                "is_planet_on_shelf": bool_space_2,
+                "is_joker_on_shelf": bool_space_4,
+                "is_planet_on_shelf": bool_space_4,
                 "is_buffoon_pack": bool_space_2,
                 "is_celestial_pack": bool_space_2,
                 
@@ -202,7 +239,7 @@ class ShopEnv(gym.Env):
                 "pack_card_is_planet": bool_space_5,
                 "pack_card_level_indices": sp.Box(-1, 12, shape=(5,), dtype=np.int32),
                 
-                "shop_cards": BaseCard.observation_space(2),
+                "shop_cards": BaseCard.observation_space(4),
                 "booster_cards": BaseCard.observation_space(2),
                 "owned_jokers": BaseCard.observation_space(5),
                 "pack_cards": BaseCard.observation_space(5),
@@ -217,9 +254,14 @@ class ShopEnv(gym.Env):
         return self.G.dollars >= cost or (have_cc and self.G.dollars - cost >= -25)
 
     def build_action_space(self):
-        return sp.Discrete(17)
+        return sp.Discrete(18)
 
     def check_card_purchaseable(self, action):
+        discount = 1.0
+        if "Clearance Sale" in self.G.owned_vouchers:
+            discount = 0.75
+        if "Liquidation" in self.G.owned_vouchers:
+            discount = 0.5
         if action[0] == Actions.BUY_CARD:
             i = action[1][0] - 1
             if i >= len(self.shop_jokers):
@@ -233,7 +275,7 @@ class ShopEnv(gym.Env):
             if not isinstance(joker, (Joker, PlanetCard)):
                 return False
 
-            affordable = self.can_pay(joker.value)
+            affordable = self.can_pay(int(joker.value * discount))
             return affordable
         elif action[0] == Actions.BUY_BOOSTER:
             i = action[1][0] - 1
@@ -242,7 +284,7 @@ class ShopEnv(gym.Env):
             booster = self.boosters[i]
             if booster.get_universal_index() == 0:
                 return False  # padding card from real environment
-            affordable = self.can_pay(booster.value)
+            affordable = self.can_pay(int(booster.value * discount))
             return affordable
         else:
             raise ValueError(f"Unknown action type for purchasing: {action[0]}")
@@ -257,30 +299,48 @@ class ShopEnv(gym.Env):
         elif action_idx == 3:
             return [Actions.BUY_CARD, [2]]
         elif action_idx == 4:
-            return [Actions.BUY_BOOSTER, [1]]
+            return [Actions.BUY_CARD, [3]]
         elif action_idx == 5:
+            return [Actions.BUY_CARD, [4]]
+        elif action_idx == 6:
+            return [Actions.BUY_BOOSTER, [1]]
+        elif action_idx == 7:
             return [Actions.BUY_BOOSTER, [2]]
-        elif action_idx in range(6, 11):
-            joker_slot = action_idx - 5
+        elif action_idx in range(8, 13):
+            joker_slot = action_idx - 7
             return [Actions.SELL_JOKER, [joker_slot]]
-        elif action_idx in range(11, 16):
-            pack_slot = action_idx - 10
+        elif action_idx in range(13, 18):
+            pack_slot = action_idx - 12
             return [Actions.SELECT_BOOSTER_CARD, [pack_slot], []]
-        elif action_idx == 16:
+        elif action_idx == 18:
             return [Actions.SKIP_BOOSTER_PACK]
+        elif action_idx == 19:
+            return [Actions.BUY_VOUCHER]
         else:
             return [Actions.END_SHOP]
 
-    def roll_jokers(self):
-        self.shop_jokers = []
+    def roll_jokers(self, fill_jokers=False):
+        if not fill_jokers:
+            self.shop_jokers = []
         # Generate a random joker and ensure it is unique and not already owned
-        while len(self.shop_jokers) < 2:
+        shop_limit = 2
+        if "Overstock" in self.G.owned_vouchers:
+            shop_limit += 1
+        if "Overstock Plus" in self.G.owned_vouchers:
+            shop_limit += 1
+        while len(self.shop_jokers) < shop_limit:
             r = randint(1, 28)
             if r <= 20:
+                prob = 1.0
+                if "Hone" in self.G.owned_vouchers:
+                    prob *= 2.0
+                if "Glow Up" in self.G.owned_vouchers:
+                    prob *= 2.0
                 joker = Joker.random(
                     unlocked_jokers=self.G.unlocked_jokers,
                     ignore_rarity=self.ignore_rarity,
                     stake=self.stake,
+                    prob=prob,
                 )
                 joker.segment = BaseCard.Segments.SHOP_BUYABLE
                 if any(
@@ -315,6 +375,22 @@ class ShopEnv(gym.Env):
             if any(j.name == "Astronomer" for j in self.G.owned_jokers):
                 if self.boosters[-1].name == "Celestial":
                     self.boosters[-1].value = 0
+                    
+    def roll_voucher(self):
+        pool = []
+        total = 16
+        for t1, t2 in self.voucher_chains.items():
+            if t1 not in self.G.owned_vouchers:
+                pool.append(t1)
+            elif t2 is not None and t2 not in self.G.owned_vouchers:
+                pool.append(t2)
+            elif t2 is not None:
+                total -= 1
+        if random.random() > len(pool) * 1.0 / total:
+            self.current_voucher = None
+        else:
+            self.current_voucher = random.choice(pool)
+        self.voucher_price = 10
 
     def roll_shop(self):
         self.roll_jokers()
@@ -322,16 +398,26 @@ class ShopEnv(gym.Env):
     def new_shop(self):
         self.roll_shop()
         self.roll_boosters()
+        if self.round % 3 == 1:
+            self.roll_voucher()
         self.booster_contents = []
         self.G.hand = Hand([])
         self.reroll_cost = 5
+        reduction = 0
+        if "Reroll Surplus" in self.G.owned_vouchers:
+            reduction += 2
+        if "Reroll Glut" in self.G.owned_vouchers:
+            reduction += 2
+        self.reroll_cost -= reduction
         if any([j.name == "Chaos the Clown" for j in self.G.owned_jokers]):
             # Chaos the Clown allows rerolling once for free
             self.reroll_cost = 0
 
     def reset(self, seed=None, options=None):
         self.G = SharedGamestate()
+        self.voucher_telemetry = {v_name: 0 for v_name in self.all_vouchers}
         self.G.max_hand_size = self.max_hand_size
+        self.round = 1
         self.new_shop()
         self.G.dollars = self.starting_dollars
         self.G.owned_jokers = []
@@ -341,7 +427,6 @@ class ShopEnv(gym.Env):
         self.reroll_count = 0
         self.boosters_purchased = 0
         self.boosters_skipped = 0
-        self.round = 1
         self.G.hand_stats = HandType.all_hands()
         self.telemetry = {
             k: 0
@@ -371,7 +456,9 @@ class ShopEnv(gym.Env):
             is_legal = self.can_pay(self.reroll_cost)
         elif action[0] == Actions.SELL_JOKER:
             is_legal = len(self.G.owned_jokers) >= action[1][0]
-            
+        elif action[0] == Actions.BUY_VOUCHER:
+            is_legal = self.current_voucher and self.can_pay(self.voucher_price)
+        
         if not is_legal:
             reward = self.illegal_action_reward
             print(f"DEBUG: Model picked ILLEGAL {action}.")
@@ -400,9 +487,14 @@ class ShopEnv(gym.Env):
         )
 
     def take_action(self, action):
+        discount = 1.0
+        if "Clearance Sale" in self.G.owned_vouchers:
+            discount = 0.75
+        if "Liquidation" in self.G.owned_vouchers:
+            discount = 0.5
         if action[0] == Actions.BUY_CARD:
             purchased_joker = self.shop_jokers.pop(action[1][0] - 1)
-            self.G.dollars -= purchased_joker.value
+            self.G.dollars -= int(purchased_joker.value * discount)
             if isinstance(purchased_joker, PlanetCard):
                 purchased_joker.trigger(targets=[], gamestate=self.G)
             else:
@@ -418,7 +510,13 @@ class ShopEnv(gym.Env):
             self.telemetry["rerolls"] += 1
             self.G.dollars -= self.reroll_cost
             if self.reroll_cost == 0:
-                self.reroll_cost = 5  # Reset to default cost after free reroll
+                self.reroll_cost = 5
+                reduction = 0
+                if "Reroll Surplus" in self.G.owned_vouchers:
+                    reduction += 2
+                if "Reroll Glut" in self.G.owned_vouchers:
+                    reduction += 2
+                self.reroll_cost -= reduction
             else:
                 self.reroll_cost += 1
             self.roll_jokers()
@@ -433,7 +531,7 @@ class ShopEnv(gym.Env):
             ):
                 self.telemetry["jokers_sold_before_limit"] += 1
             sold_joker = self.G.owned_jokers.pop(action[1][0] - 1)
-            self.G.dollars += sold_joker.value
+            self.G.dollars += int(sold_joker.value * discount)
             self.jokers_sold += 1
         elif action[0] == Actions.END_SHOP:
             self.roll_shop()
@@ -443,12 +541,22 @@ class ShopEnv(gym.Env):
             self.current_opened_pack_name = booster.name
             self.telemetry[f"{booster.full_name()}_purchased"] += 1
             self.booster_choices_left = booster.num_choices
-            self.G.dollars -= booster.value
+            self.G.dollars -= int(booster.value * discount)
+            prob = 1.0
+            if "Hone" in self.G.owned_vouchers:
+                prob *= 2.0
+            if "Glow Up" in self.G.owned_vouchers:
+                prob *= 2.0
+            telescope = None
+            if "Telescope" in self.G.owned_vouchers:
+                telescope = self.G.most_played_hand_name
             self.booster_contents = booster.open(
                 self.G.owned_jokers + self.shop_jokers,
                 self.G.unlocked_jokers,
                 ignore_rarity=self.ignore_rarity,
                 stake=self.stake,
+                prob=prob,
+                telescope=telescope
             )
             if booster.name in ["Arcana", "Spectral"]:
                 self.G.hand = Hand([])
@@ -491,6 +599,13 @@ class ShopEnv(gym.Env):
             self.booster_choices_left = 0
             self.boosters_skipped += 1
             self.G.hand = Hand([])
+        elif action[0] == Actions.BUY_VOUCHER:
+            self.G.dollars -= self.voucher_price
+            self.G.owned_vouchers.add(self.current_voucher)
+            self.voucher_telemetry[self.current_voucher] = 1
+            if self.current_voucher in ["Overstock", "Overstock Plus"]:
+                self.roll_jokers(fill_jokers=True)
+            self.current_voucher = None
 
     def load_gamestate(self, gamestate):
         self.G.dollars = gamestate.get("dollars", self.starting_dollars)

@@ -52,7 +52,7 @@ class PlanetCard(Consumable):
         return PlanetCard.base_set() + PlanetCard.unlock_set()
 
     @staticmethod
-    def random(unlocked=[]):
+    def random(unlocked=[], telescope=None):
         planets = PlanetCard.base_set()
 
         # Not currently supported, need to be unlocked by playing an impossible hand
@@ -61,5 +61,10 @@ class PlanetCard(Consumable):
         for planet in extra_planets:
             if planet.name in unlocked:
                 planets.append(planet)
-
+                
+        if telescope is not None:
+            for planet in planets:
+                if planet.name == telescope:
+                    return planet
+        
         return choice(planets)

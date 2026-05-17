@@ -13,7 +13,7 @@ class Blind:
         ("The Hook", 0, 2),
         ("The Psychic", 0, 2),
         ("The Manacle", 0, 2),  # -1 hand size
-        # ("The Pillar", 0, 2), # debuff previously played
+        ("The Pillar", 0, 2), # debuff previously played
         ("The House", 2, 2),  # First hand face down
         ("The Wall", 2, 4),
         ("The Arm", 2, 2),  # Decrease level of played hand
@@ -24,18 +24,18 @@ class Blind:
         ("The Flint", 2, 2),  # Base chips and mult halved
         ("The Mark", 2, 2),  # All face cards face down
         ("The Eye", 3, 2),  # No repeat hand types
-        # ("The Tooth", 3, 2), # lose $1 per card played
+        ("The Tooth", 3, 2), # lose $1 per card played
         ("The Plant", 4, 2),  # Face cards debuffed
-        # ("The Serpent", 5, 2),  # Always draw 3 (ignore hand size)
-        # ("The Ox", 6, 2), # Playing your most played hand sets money to 0
+        ("The Serpent", 5, 2),  # Always draw 3 (ignore hand size)
+        ("The Ox", 6, 2), # Playing your most played hand sets money to 0
     ]
 
     finisher_blinds = [
         ("Amber Acorn", 8, 2),  # Flip and shuffle all jokers
-        # ("Verdant Leaf", 8, 2), # All cards debuffed until 1 joker sold
+        ("Verdant Leaf", 8, 2), # All cards debuffed until 1 joker sold
         ("Violet Vessel", 8, 6),
         ("Crimson Heart", 8, 2),  # Random joker disabled every hand
-        # ("Cerulean Bell", 8, 2), # 1 card always force selected
+        ("Cerulean Bell", 8, 2), # 1 card always force selected
     ]
 
     def __init__(self, name, round, chip_goal, index=None, reward=0):

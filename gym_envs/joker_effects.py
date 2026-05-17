@@ -346,23 +346,23 @@ def joker_card_score_effects(jokers, card_scored, gamestate):
             if card_scored.value in [12, 13]:
                 effects["mult_mult"] *= 2
                 effects["synergy"] += 0
-        elif joker.name in ["Blueprint", "Brainstorm"]:
-            # For right now we are going to randomly select targets to copy
-            copyable_jokers = [j for j in jokers if j.copyable()]
-            if len(copyable_jokers) > 0:
-                copied_joker = random.choice(copyable_jokers)
-                copied_joker = deepcopy(copied_joker)
-                copied_effects = joker_card_score_effects(
-                    [copied_joker], card_scored, gamestate
-                )
+        # elif joker.name in ["Blueprint"]:
+        #     # For right now we are going to randomly select targets to copy
+        #     copyable_jokers = [j for j in jokers if j.copyable()]
+        #     if len(copyable_jokers) > 0:
+        #         copied_joker = random.choice(copyable_jokers)
+        #         copied_joker = deepcopy(copied_joker)
+        #         copied_effects = joker_card_score_effects(
+        #             [copied_joker], card_scored, gamestate
+        #         )
 
-                effects["chips"] += copied_effects["chips"]
-                effects["mult"] += copied_effects["mult"]
-                effects["mult_mult"] *= copied_effects["mult_mult"]
-                effects["synergy"] += copied_effects["synergy"]
-                effects["callbacks"].extend(
-                    [x for x in copied_effects["callbacks"] if "destroy" not in x[0]]
-                )
+        #         effects["chips"] += copied_effects["chips"]
+        #         effects["mult"] += copied_effects["mult"]
+        #         effects["mult_mult"] *= copied_effects["mult_mult"]
+        #         effects["synergy"] += copied_effects["synergy"]
+        #         effects["callbacks"].extend(
+        #             [x for x in copied_effects["callbacks"] if "destroy" not in x[0]]
+        #         )
         elif joker.name == "Vampire":
             if card_scored.enhancement != BaseCard.Enhancements.NORMAL:
                 joker.state["mult_mult"] += 0.1
@@ -649,7 +649,7 @@ def joker_triggered_effects(
             # Actually triggers on the first played face card
             # So we reset the flag when the joker is triggered
             joker.state["triggered_this_hand"] = False
-        elif joker.name in ["Blueprint", "Brainstorm"]:
+        elif joker.name in ["Blueprint"]:
             # For right now we are going to randomly select targets to copy
             copyable_jokers = [j for j in jokers if j.copyable()]
             if len(copyable_jokers) > 0:

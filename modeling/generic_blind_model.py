@@ -4,6 +4,53 @@ from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from gym_envs.universal_card_encoder import UniversalCardEncoder, make_projector, init_hidden
 from torch.utils.checkpoint import checkpoint
 
+class GatedTransformerLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward):
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, batch_first=True)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.act = nn.GELU()
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        
+        self.gate1 = nn.Parameter(torch.zeros(d_model))
+        self.gate2 = nn.Parameter(torch.zeros(d_model))
+
+        self._init_weights()
+
+    def _init_weights(self):
+        nn.init.orthogonal_(self.linear1.weight, gain=1.0)
+        nn.init.constant_(self.linear1.bias, 0.0)
+        nn.init.orthogonal_(self.linear2.weight, gain=0.01)
+        nn.init.constant_(self.linear2.bias, 0.0)
+
+    def forward(self, src, src_key_padding_mask=None):
+        nx = self.norm1(src)
+        attn_out, _ = self.self_attn(nx, nx, nx, key_padding_mask=src_key_padding_mask)
+        src = src + self.gate1 * attn_out
+        
+        nx = self.norm2(src)
+        ffn_out = self.linear2(self.act(self.linear1(nx)))
+        src = src + self.gate2 * ffn_out
+        
+        return src
+
+class GatedTransformerEncoder(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward, num_layers):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            GatedTransformerLayer(d_model, nhead, dim_feedforward)
+            for _ in range(num_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, src, src_key_padding_mask=None):
+        for layer in self.layers:
+            src = layer(src, src_key_padding_mask=src_key_padding_mask)
+        return self.norm(src)
+
 def init_head(m):
     if isinstance(m, nn.Linear):
         nn.init.orthogonal_(m.weight, gain=0.01)
@@ -21,12 +68,6 @@ def make_head(in_dim, h_dim, out_dim):
     m[-1].apply(init_head)
     return m
 
-def init_transformer(m):
-    if isinstance(m, nn.Linear):
-        nn.init.orthogonal_(m.weight, gain=1.414)
-        if m.bias is not None:
-            nn.init.constant_(m.bias, 0.0)
-
 class BalatroBlindModel(TorchModelV2, nn.Module):
     def __init__(self, obs_space, action_space, num_outputs, model_config, name, **kwargs):
         super().__init__(obs_space, action_space, num_outputs, model_config, name)
@@ -39,7 +80,7 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         
         self.pos_emb = nn.Parameter(torch.randn(1, self.num_tokens, self.dim) * 0.02)
         self.blind_emb = nn.Embedding(32, self.dim)
-        nn.init.normal_(self.blind_emb.weight, std=0.02)
+        nn.init.normal_(self.blind_emb.weight, mean=0.0, std=0.02)
         
         self.goal_proj = make_projector(4, self.dim)
         self.state_proj = make_projector(2, self.dim - 2)
@@ -49,13 +90,10 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         
         self.stop_token = nn.Parameter(torch.randn(1, 1, self.dim) * 0.02)
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.dim) * 0.02)
-
-        layer = nn.TransformerEncoderLayer(
-            d_model=self.dim, nhead=8, dim_feedforward=self.h,
-            activation="gelu", batch_first=True, norm_first=True,
+        
+        self.transformer = GatedTransformerEncoder(
+            d_model=self.dim, nhead=8, dim_feedforward=self.h, num_layers=4
         )
-        self.transformer = nn.TransformerEncoder(layer, num_layers=4)
-        self.transformer.apply(init_transformer)
 
         self.mode_head = make_head(self.dim * 2, self.h, 2)
         self.selection_head = make_head(self.dim, self.h, 1)
@@ -86,9 +124,8 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         joker_invalid_mask = (obs["jokers"]["indices"] == 0)
         h_ranks, h_suits = obs["hand"]["rank"].float(), obs["hand"]["suit"].float()
         
-        blind_identity = self.blind_emb(obs["blind_index"].long().view(-1))
         g_tok = self.goal_proj(torch.cat([obs["chips"] / 100000.0, torch.log10(obs["chips"] + 1) / 10.0, obs["chips_average"] / 100000.0, torch.log10(obs["chips_average"] + 1) / 10.0], dim=1)).unsqueeze(1)
-        bl_tok = blind_identity.unsqueeze(1)
+        bl_tok = self.blind_emb(obs["blind_index"].long().view(-1)).unsqueeze(1)
         
         s_tok_base = self.state_proj(torch.cat([obs["hands_left"] / 10.0, obs["discards_left"] / 10.0], dim=1)).unsqueeze(1)
         s_tok = torch.cat([s_tok_base, torch.zeros(B, 1, 2, device=device)], dim=-1)
@@ -128,7 +165,8 @@ class BalatroBlindModel(TorchModelV2, nn.Module):
         else:
             features = self.transformer(x_final, src_key_padding_mask=pad_mask)
         
-        self._val_out = self.value_head(features[:, 32, :]).squeeze(-1)
+        raw_val = self.value_head(features[:, 32, :]).squeeze(-1)
+        self._val_out = torch.sigmoid(raw_val) * 4.0
         
         masks = torch.cat([hand_invalid_mask.float(), h_ranks, h_suits, joker_invalid_mask.float()], dim=1)
         return torch.cat([seq_base.reshape(B, -1), masks], dim=1), []

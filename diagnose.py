@@ -26,8 +26,8 @@ def register_custom_assets():
 # ==========================================
 # 1. 配置参数 (请填入你的真实路径)
 # ==========================================
-CHECKPOINT_PATH = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_227ae_00000_0_2026-05-11_04-30-50/checkpoint_000006"
-NUM_EPISODES = 50
+CHECKPOINT_PATH = r"/root/autodl-tmp/run_data/blind_shop/blind_shop_bac94_00000_0_2026-05-16_19-16-48/checkpoint_000013/"
+NUM_EPISODES = 1000
 
 def format_cards(cards):
     """将卡牌对象转化为人类可读的字符串列表"""
@@ -107,33 +107,8 @@ def evaluate_agent():
             
             for agent_id in active_agents:
                 obs = obs_dict[agent_id]
-                # --- 处理 商店 Agent ---
-                if agent_id == "shop_agent":
-                    # 获取环境里的真实物理对象用于打印
-                    shop_env = env.shop_env
-                    print(f"\n[Step {step_count}] ---> 🛒 商店阶段 (Round {shop_env.round})")
-                    print(f"  💰 资金: ${shop_env.G.dollars} | 🎲 Reroll: ${shop_env.reroll_cost}")
-                    print(f"  📈 牌型等级: {format_hand_levels(shop_env.G.hand_stats)}")
-                    print(f"  🎯 下一关: {shop_env.next_blind.name} (目标: {shop_env.next_blind.chip_goal})")
-                    print(f"  🎒 拥有小丑: {format_cards(shop_env.G.owned_jokers)}")
-                    print(f"  🏪 货架物品: {format_cards(shop_env.shop_jokers)}")
-                    print(f"  📦 货架卡包: {[b.name for b in shop_env.boosters]}")
-                    if shop_env.in_pack_selection:
-                        print(f"  🎁 拆开的包: {format_cards(shop_env.booster_contents)}")
-
-                    # 让模型预测动作 (关闭探索，输出纯概率分布里的 Argmax)
-                    action = algo.compute_single_action(
-                        obs, 
-                        policy_id="shop_agent", 
-                        explore=False
-                    )
-                    action_dict[agent_id] = action
-                    
-                    # 翻译动作给人看
-                    act_meaning = shop_env.action_vector_to_action(action)
-                    print(f"  🤖 AI 决定 -> {act_meaning[0].name} (参数: {act_meaning[1:]})")
                 # --- 处理 打牌 Agent ---
-                elif agent_id.startswith("blind_agent"):
+                if agent_id.startswith("blind_agent"):
                     blind_env = env.blind_env
                     print(f"\n[Step {step_count}] ---> ⚔️ 战斗阶段 (Round {blind_env.round})")
                     print(f"  🎯 Boss: {blind_env.G.current_blind.name} | 分数: {blind_env.chips} / {blind_env.chip_goal}")
@@ -158,6 +133,32 @@ def evaluate_agent():
                     # 找出它具体选了哪几张牌
                     chosen_cards = [blind_env.G.hand.cards[i-1] for i in card_indices if i-1 < len(blind_env.G.hand.cards)]
                     print(f"  🤖 AI 决定 -> {act_type}: {format_cards(chosen_cards)}")
+                # --- 处理 商店 Agent ---
+                if agent_id == "shop_agent":
+                    # 获取环境里的真实物理对象用于打印
+                    shop_env = env.shop_env
+                    print(f"\n[Step {step_count}] ---> 🛒 商店阶段 (Round {shop_env.round})")
+                    print(f"  💰 资金: ${shop_env.G.dollars} | 🎲 Reroll: ${shop_env.reroll_cost}")
+                    print(f"  📈 牌型等级: {format_hand_levels(shop_env.G.hand_stats)}")
+                    print(f"  🎯 下一关: {shop_env.next_blind.name} (目标: {shop_env.next_blind.chip_goal})")
+                    print(f"  🎒 拥有小丑: {format_cards(shop_env.G.owned_jokers)}")
+                    print(f"  🏪 货架物品: {format_cards(shop_env.shop_jokers)}")
+                    print(f"  📦 货架卡包: {[b.name for b in shop_env.boosters]}")
+                    print(f"      优惠卷: {shop_env.current_voucher}")
+                    if shop_env.in_pack_selection:
+                        print(f"  🎁 拆开的包: {format_cards(shop_env.booster_contents)}")
+
+                    # 让模型预测动作 (关闭探索，输出纯概率分布里的 Argmax)
+                    action = algo.compute_single_action(
+                        obs, 
+                        policy_id="shop_agent", 
+                        explore=False
+                    )
+                    action_dict[agent_id] = action
+                    
+                    # 翻译动作给人看
+                    act_meaning = shop_env.action_vector_to_action(action)
+                    print(f"  🤖 AI 决定 -> {act_meaning[0].name} (参数: {act_meaning[1:]})")
 
             # --- 执行环境 Step ---
             obs_dict, rewards_dict, done, truncs_dict, infos_dict = env.step(action_dict)

@@ -4,7 +4,7 @@ from gym_envs.base_card import BaseCard
 
 def init_hidden(m):
     if isinstance(m, nn.Linear):
-        nn.init.orthogonal_(m.weight, gain=1.414)
+        nn.init.orthogonal_(m.weight, gain=1.0)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0.0)
     elif isinstance(m, nn.LayerNorm):
@@ -14,36 +14,19 @@ def init_hidden(m):
 class Projector(nn.Module):
     def __init__(self, in_dim, out_dim):
         super().__init__()
-        self.shortcut = nn.Linear(in_dim, out_dim)
-        
-        self.non_linear = nn.Sequential(
-            nn.Linear(in_dim, out_dim * 2),
-            nn.LayerNorm(out_dim * 2),
-            nn.GELU(),
-            nn.Linear(out_dim * 2, out_dim),
-        )
-        self.final_norm = nn.LayerNorm(out_dim)
+        self.network = nn.Linear(in_dim, out_dim)
         
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            if m is self.shortcut:
-                nn.init.orthogonal_(m.weight, gain=1.0)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0.0)
-            elif m is self.non_linear[-1]:
-                nn.init.orthogonal_(m.weight, gain=0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0.0)
-            else:
-                nn.init.orthogonal_(m.weight, gain=1.414)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0.0)
-                    
+            nn.init.orthogonal_(m.weight, gain=1.0)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0.0)
+    
     def forward(self, x):
-        return self.final_norm(self.shortcut(x) + self.non_linear(x))
-
+        return self.network(x)
+    
 def make_projector(in_dim, out_dim):
     return Projector(in_dim, out_dim)
 
@@ -52,15 +35,15 @@ class UniversalCardEncoder(nn.Module):
         super().__init__()
         self.dim = 128
         
-        self.general_index_embedding = nn.Embedding(BaseCard.total_cards, 42, padding_idx=0)
-        self.rank_embedding = nn.Embedding(BaseCard.num_ranks, 16, padding_idx=0)
-        self.suit_embedding = nn.Embedding(BaseCard.num_suits, 16, padding_idx=0)
+        self.general_index_embedding = nn.Embedding(BaseCard.total_cards, 48, padding_idx=0)
+        self.rank_embedding = nn.Embedding(BaseCard.num_ranks, 20, padding_idx=0)
+        self.suit_embedding = nn.Embedding(BaseCard.num_suits, 20, padding_idx=0)
         
         for emb in [self.general_index_embedding, self.rank_embedding, self.suit_embedding]:
             nn.init.normal_(emb.weight, mean=0.0, std=0.02)
         
-        self.scalar_projector = make_projector(6, 16)
-        self.relational_projector = make_projector(3, 16)
+        self.scalar_projector = make_projector(6, 12)
+        self.relational_projector = make_projector(3, 6)
         
         self.enhancement_embedding = nn.Embedding(BaseCard.num_enhancements, 4, padding_idx=0)
         self.edition_embedding = nn.Embedding(BaseCard.num_editions, 4, padding_idx=0)

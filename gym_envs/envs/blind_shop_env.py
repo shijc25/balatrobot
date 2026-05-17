@@ -371,7 +371,12 @@ class BlindShopEnv(MultiAgentEnv):
 
         # Interest earned from remaining cash after blind
         interest = int(self.blind_env.G.dollars / 5)
-        interest = max(min(interest, 5), 0)  # Cap interest at 5
+        interest_cap = 5
+        if "Seed Money" in self.shop_env.G.owned_vouchers:
+            interest_cap = 10
+        if "Money Tree" in self.shop_env.G.owned_vouchers:
+            interest_cap = 20
+        interest = max(min(interest, interest_cap), 0)
         if any(joker.name == "To the Moon" for joker in self.blind_env.G.owned_jokers):
             interest *= 2
 

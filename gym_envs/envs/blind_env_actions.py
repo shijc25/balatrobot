@@ -2,6 +2,7 @@
 
 from itertools import combinations
 from math import comb
+from random import randint
 from typing import Dict, Iterable, List, Optional
 
 import numpy as np
@@ -83,6 +84,11 @@ class BlindActionHelper:
             if len(cards) == 0: 
                 cards = [1]
                 
+            if self.G.current_blind.name == "Cerulean Bell":
+                forced_idx = randint(1, hand_actual_size)
+                if forced_idx not in cards:
+                    cards[-1] = forced_idx
+            
             if mode == 1 and self.discards_left <= 0:
                 mode = 0
             

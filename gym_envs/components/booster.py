@@ -80,20 +80,22 @@ class Booster(BaseCard):
         # i += ["Normal", "Jumbo", "Mega"].index(self.size)
         return i
 
-    def open(self, owned, unlocked, ignore_rarity=False, stake=0):
+    def open(self, owned, unlocked, ignore_rarity=False, stake=0, prob=1.0, telescope=None):
         if len(self.cards) > 0:
             return self.cards
-
+        
         while len(self.cards) < self.num_cards:
+            if len(self.cards) >= 1:
+                telescope = None
             if self.name == "Buffoon":
                 no_dupes = True
                 card_gen = lambda: Joker.random(
-                    unlocked_jokers=unlocked, ignore_rarity=ignore_rarity, stake=stake
+                    unlocked_jokers=unlocked, ignore_rarity=ignore_rarity, stake=stake, prob=prob
                 )
             elif self.name == "Celestial":
                 no_dupes = True
                 card_gen = lambda: (
-                    PlanetCard.random(unlocked=unlocked)
+                    PlanetCard.random(unlocked=unlocked, telescope=telescope)
                     if random() > 0.003
                     else SpectralCard.from_name("Black Hole")
                 )

@@ -9,6 +9,7 @@ from gym_envs.components.hand_type import HandType
 # For managing aspects of the game state that are similar between blind, shop, etc.
 class SharedGamestate:
     def __init__(self):
+        self.owned_vouchers = set()
         self.owned_jokers = []
         self.dollars = 0
         self.hand_stats = HandType.all_hands()
@@ -46,10 +47,40 @@ class SharedGamestate:
                 size += 2
         if self.current_blind.name == "Manacle":
             size -= 1
-
+            
+        if "Paint Brush" in self.owned_vouchers:
+            size += 1
+        if "Palette" in self.owned_vouchers:
+            size += 1
         size += self.hand_size_mod
         return max(min(size, self.max_hand_size), 1)
-
+    
+    @property
+    def max_plays(self):
+        plays = 5
+        if "Grabber" in self.owned_vouchers:
+            plays += 1
+        if "Nacho Tong" in self.owned_vouchers:
+            plays += 1
+        return plays
+    
+    @property
+    def max_discards(self):
+        discards = 3
+        if "Wasteful" in self.owned_vouchers:
+            discards += 1
+        if "Recyclomancy" in self.owned_vouchers:
+            discards += 1
+        return discards
+    
+    @property
+    def most_played_hand_name(self):
+        most_hand = "High Card"
+        for hand_name, hand in self.hand_stats.items():
+            if self.hand_stats[hand_name].play_count >= self.hand_stats[most_hand].play_count:
+                most_hand = hand_name
+        return most_hand
+    
     def add_consumable(self, consumable):
         if len(self.consumables) < self.max_consumables:
             self.consumables.append(consumable)
